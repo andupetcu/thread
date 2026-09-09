@@ -265,6 +265,7 @@ export function useWorkspace(initial) {
     setError,
     needsUnlock,
     setNeedsUnlock,
+    setUser: (user) => setSnapshot((snapshot) => ({ ...snapshot, user })),
     conflicts,
     resolve,
     flush,

@@ -1,43 +1,11 @@
 import http from "node:http";
-import {
-  randomBytes,
-  scrypt as scryptCallback,
-  timingSafeEqual,
-  createHash,
-} from "node:crypto";
-import { promisify } from "node:util";
+import { handleOkf } from "./okf-http.mjs";
+import { randomUUID } from "node:crypto";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { WorkspaceStore, StoreError } from "./store.mjs";
-const scrypt = promisify(scryptCallback),
-  TTL = 12 * 60 * 60 * 1000;
-export async function passwordRecord(password) {
-  if (
-    typeof password !== "string" ||
-    password.length < 8 ||
-    password.length > 256
-  )
-    throw new StoreError("Use a password of 8–256 characters.");
-  const salt = randomBytes(24).toString("hex");
-  const hash = (await scrypt(password, salt, 64)).toString("hex");
-  return { salt, hash };
-}
-async function matches(password, record) {
-  if (typeof password !== "string" || password.length > 256 || !record)
-    return false;
-  const hash = await scrypt(password, record.salt, 64);
-  return timingSafeEqual(hash, Buffer.from(record.hash, "hex"));
-}
-const digest = (value) => createHash("sha256").update(value).digest("hex");
-function cookie(req) {
-  return (
-    (req.headers.cookie || "")
-      .split(";")
-      .map((s) => s.trim())
-      .find((s) => s.startsWith("thread_session="))
-      ?.slice(15) || ""
-  );
-}
+import { Accounts, publicUser } from "./auth.mjs";
+export { passwordRecord } from "./auth.mjs";
 async function readBody(req, limit = 5_000_000) {
   const buffers = [];
   let size = 0;
@@ -50,7 +18,7 @@ async function readBody(req, limit = 5_000_000) {
 }
 export function createServer({ dir, staticDir = path.resolve("dist") } = {}) {
   const store = new WorkspaceStore(dir);
-  const attempts = new Map();
+  const accounts = new Accounts(store);
   const server = http.createServer(async (req, res) => {
     const json = (status, data) => {
       res.writeHead(status, {
@@ -118,122 +86,205 @@ export function createServer({ dir, staticDir = path.resolve("dist") } = {}) {
         if (req.headers.origin && new URL(req.headers.origin).host !== url.host)
           throw new StoreError("Cross-origin changes are not allowed.", 403);
       }
-      const token = cookie(req);
-      const session =
-        token &&
-        store.db
-          .prepare("SELECT expires FROM sessions WHERE hash=?")
-          .get(digest(token));
-      const authenticated = !!session && session.expires > Date.now();
-      const setSession = () => {
-        const value = randomBytes(32).toString("base64url");
-        store.db
-          .prepare("DELETE FROM sessions WHERE expires<?")
-          .run(Date.now());
-        store.db
-          .prepare("INSERT INTO sessions VALUES(?,?)")
-          .run(digest(value), Date.now() + TTL);
-        res.setHeader(
-          "Set-Cookie",
-          `thread_session=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${TTL / 1000}`,
-        );
-      };
-      if (route === "/auth/status" && method === "GET")
-        return json(200, {
-          configured: !!store.getMeta("password"),
-          authenticated,
-        });
-      if (route === "/auth/setup" && method === "POST") {
-        if (store.getMeta("password"))
-          throw new StoreError(
-            "A workspace password has already been set.",
-            409,
-          );
-        const body = JSON.parse((await readBody(req, 2000)).toString());
-        const record = await passwordRecord(body.password);
-        if (store.getMeta("password"))
-          throw new StoreError(
-            "A workspace password has already been set.",
-            409,
-          );
-        store.setMeta("password", record);
-        setSession();
-        return json(200, { ok: true });
-      }
-      if (route === "/auth/login" && method === "POST") {
-        const key = req.socket.remoteAddress;
-        const limit = attempts.get(key);
-        if (limit && limit.until > Date.now() && limit.count >= 5)
-          throw new StoreError(
-            "Too many attempts. Try again in 15 minutes.",
-            429,
-          );
-        const prior =
-          limit && limit.until > Date.now()
-            ? limit
-            : { count: 0, until: Date.now() + 15 * 60 * 1000 };
-        attempts.set(key, { ...prior, count: prior.count + 1 });
-        const body = JSON.parse((await readBody(req, 2000)).toString());
-        const record = store.getMeta("password");
+      const body = async () => JSON.parse((await readBody(req)).toString());
+      if (route.startsWith("/agent/")) {
+        const agentIdentity = accounts.agent(req);
         if (
-          !(await matches(body.password, record)) ||
-          record?.salt !== store.getMeta("password")?.salt
-        ) {
-          throw new StoreError("Incorrect workspace password.", 401);
-        }
-        attempts.delete(key);
-        setSession();
-        return json(200, { ok: true });
-      }
-      if (!authenticated)
-        throw new StoreError("Unlock the workspace to continue.", 401);
-      if (route === "/auth/logout" && method === "POST") {
-        store.db
-          .prepare("DELETE FROM sessions WHERE hash=?")
-          .run(digest(token));
-        res.setHeader(
-          "Set-Cookie",
-          "thread_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
-        );
-        return json(200, { ok: true });
-      }
-      if (route === "/auth/password" && method === "POST") {
-        const body = JSON.parse((await readBody(req, 2000)).toString());
-        const previous = store.getMeta("password");
-        if (!(await matches(body.currentPassword, previous)))
-          throw new StoreError("Current password is incorrect.", 403);
-        const next = await passwordRecord(body.password);
-        if (previous?.salt !== store.getMeta("password")?.salt)
-          throw new StoreError(
-            "Password changed in another session. Unlock again.",
-            409,
+          await handleOkf({
+            route: route.slice(6),
+            method,
+            url,
+            body: async () => {
+              const input = await body();
+              accounts.agent(req);
+              return input;
+            },
+            json,
+            res,
+            store,
+            actor: { kind: "agent", id: agentIdentity?.id || "mcp" },
+          })
+        )
+          return;
+        if (route === "/agent/notes" && method === "GET") {
+          const offset = Math.max(
+            0,
+            Number(url.searchParams.get("offset")) || 0,
           );
-        store.setMeta("password", next);
-        store.db.exec("DELETE FROM sessions");
-        setSession();
-        return json(200, { ok: true });
+          const limit = Math.min(
+            100,
+            Math.max(1, Number(url.searchParams.get("limit")) || 50),
+          );
+          const q = url.searchParams.get("q");
+          const ids = q ? new Set(store.search({ q })) : null;
+          const notes = store.listNotes().filter((n) => !ids || ids.has(n.id));
+          return json(200, {
+            notes: notes
+              .slice(offset, offset + limit)
+              .map(({ id, title, updated, notebookId, parentId }) => ({
+                id,
+                title,
+                updated,
+                notebookId,
+                parentId,
+              })),
+            total: notes.length,
+          });
+        }
+        if (route === "/agent/notes" && method === "POST") {
+          const input = await body();
+          if (
+            !input ||
+            Array.isArray(input) ||
+            Object.keys(input).some((k) => !["title", "body"].includes(k))
+          )
+            throw new StoreError(
+              "Only title and body are accepted when creating an agent note.",
+            );
+          accounts.agent(req);
+          const note = store.saveNote(
+            { id: randomUUID(), title: input.title, body: input.body },
+            0,
+          );
+          return json(201, { note });
+        }
+        if (
+          /^\/agent\/notes\/[a-zA-Z0-9_-]{1,128}$/.test(route) &&
+          method === "PATCH"
+        ) {
+          const input = await body();
+          if (
+            !input ||
+            typeof input !== "object" ||
+            Array.isArray(input) ||
+            Object.keys(input).some(
+              (k) => !["title", "body", "baseRevision"].includes(k),
+            ) ||
+            !Number.isSafeInteger(input.baseRevision) ||
+            input.baseRevision < 1 ||
+            (input.title === undefined && input.body === undefined) ||
+            (input.title !== undefined &&
+              (typeof input.title !== "string" ||
+                !input.title.trim() ||
+                input.title.length > 500)) ||
+            (input.body !== undefined &&
+              (typeof input.body !== "string" || input.body.length > 2000000))
+          )
+            throw new StoreError(
+              "Provide title and/or body with the baseRevision from read_note. No other fields may be changed.",
+            );
+          accounts.agent(req);
+          const current = store.getNote(route.slice(13));
+          if (!current || current.deletedAt)
+            throw new StoreError("Note not found.", 404);
+          const note = store.saveNote(
+            {
+              ...current,
+              ...(input.title !== undefined ? { title: input.title } : {}),
+              ...(input.body !== undefined ? { body: input.body } : {}),
+            },
+            input.baseRevision,
+            { actor: { kind: "agent", id: agentIdentity?.id || "mcp" } },
+          );
+          return json(200, { note });
+        }
+        if (route.startsWith("/agent/notes/") && method === "GET") {
+          const note = store.getNote(route.slice(13));
+          if (!note || note.deletedAt)
+            throw new StoreError("Note not found.", 404);
+          return json(200, { note });
+        }
+        throw new StoreError("Not found.", 404);
       }
+      const { token, user } = accounts.session(req);
+      if (
+        await accounts.handle({
+          route,
+          method,
+          req,
+          res,
+          json,
+          body: async () => {
+            const data = JSON.parse((await readBody(req, 8000)).toString());
+            if (
+              user &&
+              !["/auth/login", "/auth/setup"].includes(route) &&
+              !accounts.session(req).user
+            )
+              throw new StoreError("Account changed. Unlock again.", 401);
+            return data;
+          },
+          user,
+          token,
+        })
+      )
+        return;
+      const readWorkspaceBody = async (limit) => {
+        const bytes = await readBody(req, limit);
+        if (!accounts.session(req).user)
+          throw new StoreError("Account changed. Unlock again.", 401);
+        return bytes;
+      };
+      const workspace = () => ({
+        ...store.workspace(),
+        user: publicUser(user),
+      });
+      if (
+        user.role !== "admin" &&
+        (method === "DELETE" ||
+          ["/restore", "/import", "/backup", "/backups", "/trash"].includes(
+            route,
+          ) ||
+          (route.startsWith("/notes/") && route.endsWith("/restore")))
+      )
+        throw new StoreError("Administrator access required.", 403);
+      if (
+        await handleOkf({
+          route,
+          method,
+          url,
+          body: async () =>
+            JSON.parse((await readWorkspaceBody(100_000_000)).toString()),
+          json,
+          res,
+          store,
+          actor: {
+            kind: "human",
+            id: user.id,
+            name: user.username || user.name,
+          },
+        })
+      )
+        return;
       if (route === "/workspace" && method === "GET") {
         const revision = store.getMeta("revision");
         if (url.searchParams.get("since") === String(revision))
           return json(200, { unchanged: true, revision });
-        return json(200, store.workspace());
+        return json(200, workspace());
       }
       if (route === "/workspace/initialize" && method === "POST") {
-        if (store.getMeta("initialized")) return json(200, store.workspace());
-        const body = JSON.parse((await readBody(req, 20_000_000)).toString());
-        return json(200, store.importNotes(body.notes, "merge"));
+        if (store.getMeta("initialized")) return json(200, workspace());
+        accounts.requireAdmin(user);
+        const body = JSON.parse(
+          (await readWorkspaceBody(20_000_000)).toString(),
+        );
+        store.importNotes(body.notes, "merge");
+        return json(200, workspace());
       }
       if (route === "/settings" && method === "PUT") {
         return json(
           200,
-          store.updateSettings(JSON.parse((await readBody(req)).toString())),
+          store.updateSettings(
+            JSON.parse((await readWorkspaceBody()).toString()),
+          ),
         );
       }
       if (route === "/notebooks" && method === "PUT") {
         return json(
           200,
-          store.saveNotebooks(JSON.parse((await readBody(req)).toString())),
+          store.saveNotebooks(
+            JSON.parse((await readWorkspaceBody()).toString()),
+          ),
         );
       }
       if (route === "/search" && method === "GET")
@@ -243,7 +294,9 @@ export function createServer({ dir, staticDir = path.resolve("dist") } = {}) {
       if (route === "/trash" && method === "GET")
         return json(200, { notes: store.listTrash() });
       if (route === "/import" && method === "POST") {
-        const body = JSON.parse((await readBody(req, 100_000_000)).toString());
+        const body = JSON.parse(
+          (await readWorkspaceBody(100_000_000)).toString(),
+        );
         return json(
           200,
           store.importNotes(
@@ -274,13 +327,13 @@ export function createServer({ dir, staticDir = path.resolve("dist") } = {}) {
         if (req.headers["content-type"]?.includes("application/zip"))
           return json(
             200,
-            store.restoreBytes(await readBody(req, 250_000_000)),
+            store.restoreBytes(await readWorkspaceBody(250_000_000)),
           );
-        const body = JSON.parse((await readBody(req)).toString());
+        const body = JSON.parse((await readWorkspaceBody()).toString());
         return json(200, store.restoreBackup(body.id));
       }
       if (route === "/assets" && method === "POST") {
-        const file = await readBody(req, 20_000_000);
+        const file = await readWorkspaceBody(20_000_000);
         return json(
           201,
           store.addAsset(
@@ -305,12 +358,17 @@ export function createServer({ dir, staticDir = path.resolve("dist") } = {}) {
       if (match) {
         const [, id, action] = match;
         if (!action && method === "PUT") {
-          const body = JSON.parse((await readBody(req)).toString());
+          const body = JSON.parse((await readWorkspaceBody()).toString());
+          if (
+            user.role !== "admin" &&
+            (body.note?.deletedAt || store.getNote(id)?.deletedAt)
+          )
+            throw new StoreError("Administrator access required.", 403);
           if (body.note?.id !== id) throw new StoreError("Note ID mismatch.");
           return json(200, store.saveNote(body.note, body.baseRevision));
         }
         if (!action && method === "DELETE") {
-          const body = JSON.parse((await readBody(req)).toString());
+          const body = JSON.parse((await readWorkspaceBody()).toString());
           return json(200, store.deleteNote(id, body.baseRevision));
         }
         if (action === "restore" && method === "POST")

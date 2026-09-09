@@ -12,9 +12,11 @@
     "format": "prettier --write src tests *.js *.json *.html README.md docs",
     "start": "node server/start.mjs",
     "reset-password": "node server/reset-password.mjs",
-    "benchmark": "node scripts/benchmark.mjs"
+    "benchmark": "node scripts/benchmark.mjs",
+    "mcp": "node server/mcp.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
     "@tiptap/extension-code-block-lowlight": "^3.31.3",
     "@tiptap/extension-image": "^3.31.3",
     "@tiptap/extension-link": "^3.31.3",
@@ -39,9 +41,12 @@
     "react-markdown": "^10.0.0",
     "remark-gfm": "^4.0.0",
     "remark-parse": "^11.0.0",
-    "unified": "^11.0.5"
+    "unified": "^11.0.5",
+    "yaml": "^2.9.0",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
     "@playwright/test": "^1.51.0",
     "@vitejs/plugin-react": "^4.3.0",
     "jsdom": "^30.0.1",

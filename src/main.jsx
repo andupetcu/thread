@@ -55,6 +55,7 @@ import { metadata, searchNotes, validateBackup, initialNotes } from "./model";
 import "./style.css";
 const BlockEditor = lazy(() => import("./BlockEditor"));
 import ContextPanel from "./ContextPanel";
+import BundleWorkspace, { BundleSidebar } from "./okf/BundleWorkspace";
 import { parseBlocks, suggestions } from "./editor-model";
 const KEY = "thread.notes.v1";
 function safeTheme() {
@@ -81,7 +82,17 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function App({ workspace, onLock }) {
-  const { notes, setNotes } = workspace;
+  const { notes: workspaceNotes, setNotes: setWorkspaceNotes } = workspace;
+  const notes = useMemo(
+    () => workspaceNotes.filter((note) => !note.okf),
+    [workspaceNotes],
+  );
+  const setNotes = (update) =>
+    setWorkspaceNotes((current) => {
+      const ordinary = current.filter((note) => !note.okf);
+      const next = typeof update === "function" ? update(ordinary) : update;
+      return [...next, ...current.filter((note) => note.okf)];
+    });
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notebook, setNotebook] = useState("");
@@ -115,6 +126,15 @@ function App({ workspace, onLock }) {
     [trash, setTrash] = useState(null),
     [contextOpen, setContextOpen] = useState(() => innerWidth >= 1100),
     [activePanel, setActivePanel] = useState(0);
+  const [bundleId, setBundleId] = useState("");
+  const [bundleName, setBundleName] = useState("");
+  const [bundleDirty, setBundleDirty] = useState(false);
+  const [bundleBusy, setBundleBusy] = useState(false);
+  const canLeaveBundle = () =>
+    !bundleBusy &&
+    (view !== "bundle" ||
+      !bundleDirty ||
+      confirm("Discard the unsaved concept changes?"));
   useEffect(() => {
     const media = matchMedia("(max-width: 1100px)");
     const adapt = () => {
@@ -127,7 +147,15 @@ function App({ workspace, onLock }) {
     searchRef = useRef();
   useEffect(() => {
     const timer = setTimeout(
-      () => workspace.saveSettings({ layout: { panels, tabs, widths, view } }),
+      () =>
+        workspace.saveSettings({
+          layout: {
+            panels,
+            tabs,
+            widths,
+            view: view === "bundle" ? "notes" : view,
+          },
+        }),
       650,
     );
     return () => clearTimeout(timer);
@@ -162,6 +190,7 @@ function App({ workspace, onLock }) {
     }
   }, [toast]);
   const create = () => {
+    if (!canLeaveBundle()) return;
     const n = {
       id: crypto.randomUUID(),
       title: "Untitled note",
@@ -200,6 +229,7 @@ function App({ workspace, onLock }) {
       ),
     );
   const open = (id, index = 0, blockId) => {
+    if (!canLeaveBundle()) return;
     setTabs((p) => (p.includes(id) ? p : [...p, id]));
     if (!notes.some((n) => n.id === id)) {
       setToast("This linked note no longer exists.");
@@ -424,7 +454,9 @@ function App({ workspace, onLock }) {
                     icon={I}
                     title={label}
                     className={view === v ? "selected" : ""}
-                    onClick={() => setView(v)}
+                    onClick={() => {
+                      if (canLeaveBundle()) setView(v);
+                    }}
                   >
                     {label}
                     <span>
@@ -438,6 +470,18 @@ function App({ workspace, onLock }) {
                 value={notebook}
                 onChange={setNotebook}
                 onError={setError}
+              />
+              <BundleSidebar
+                workspaceRevision={workspace.revision}
+                notes={notes.filter((note) => !note.okf)}
+                activeId={view === "bundle" ? bundleId : ""}
+                onError={setError}
+                onOpen={(id) => {
+                  if (!canLeaveBundle()) return;
+                  setBundleId(id);
+                  setView("bundle");
+                  setCompare(false);
+                }}
               />
               <div className="section-label">
                 Workspace{" "}
@@ -526,20 +570,25 @@ function App({ workspace, onLock }) {
                     }}
                   />
 
-                  <Button
-                    icon={Download}
-                    title="Backup workspace"
-                    onClick={async () => {
-                      try {
-                        await workspace.flush();
-                        download(await api("/backup"), "thread-workspace.zip");
-                      } catch (e) {
-                        setError(e.message);
-                      }
-                    }}
-                  >
-                    Backup
-                  </Button>
+                  {workspace.user?.role === "admin" && (
+                    <Button
+                      icon={Download}
+                      title="Backup workspace"
+                      onClick={async () => {
+                        try {
+                          await workspace.flush();
+                          download(
+                            await api("/backup"),
+                            "thread-workspace.zip",
+                          );
+                        } catch (e) {
+                          setError(e.message);
+                        }
+                      }}
+                    >
+                      Backup
+                    </Button>
+                  )}
                   <Button
                     icon={Upload}
                     title="Import notes"
@@ -577,7 +626,9 @@ function App({ workspace, onLock }) {
                       ? "Notes"
                       : view === "graph"
                         ? "Knowledge graph"
-                        : "All notes"}
+                        : view === "bundle"
+                          ? bundleName || "Knowledge bundle"
+                          : "All notes"}
                   </strong>
                 </span>
               </div>
@@ -586,9 +637,11 @@ function App({ workspace, onLock }) {
                   <Check size={13} />
                   {workspace.status}
                 </span>
-                <Button icon={Plus} onClick={create}>
-                  New note
-                </Button>
+                {view !== "bundle" && (
+                  <Button icon={Plus} onClick={create}>
+                    New note
+                  </Button>
+                )}
               </div>
             </header>
             {error && (
@@ -610,7 +663,9 @@ function App({ workspace, onLock }) {
                     <Network size={17} />
                     {view === "graph"
                       ? "Your connected thinking"
-                      : "Note database"}
+                      : view === "bundle"
+                        ? bundleName || "Knowledge bundle"
+                        : "Note database"}
                   </>
                 )}
               </div>
@@ -797,7 +852,18 @@ function App({ workspace, onLock }) {
                   ))}
               </div>
             )}
-            {view === "notes" ? (
+            {view === "bundle" ? (
+              <BundleWorkspace
+                bundleId={bundleId}
+                workspaceRevision={workspace.revision}
+                notes={notes}
+                onError={setError}
+                onBundleName={setBundleName}
+                onDirtyChange={setBundleDirty}
+                onBusyChange={setBundleBusy}
+                onOpenNote={open}
+              />
+            ) : view === "notes" ? (
               notes.length ? (
                 <>
                   {!panels.length && (
@@ -890,19 +956,26 @@ function App({ workspace, onLock }) {
                                 }
                                 exportNote={exportNote}
                                 tags={tags}
-                                remove={() => {
-                                  setTrash(n);
-                                  setNotes((p) => p.filter((x) => x.id !== id));
-                                  setPanels((p) =>
-                                    p
-                                      .map((x) =>
-                                        x === id
-                                          ? notes.find((y) => y.id !== id)?.id
-                                          : x,
-                                      )
-                                      .filter(Boolean),
-                                  );
-                                }}
+                                remove={
+                                  workspace.user?.role === "admin"
+                                    ? () => {
+                                        setTrash(n);
+                                        setNotes((p) =>
+                                          p.filter((x) => x.id !== id),
+                                        );
+                                        setPanels((p) =>
+                                          p
+                                            .map((x) =>
+                                              x === id
+                                                ? notes.find((y) => y.id !== id)
+                                                    ?.id
+                                                : x,
+                                            )
+                                            .filter(Boolean),
+                                        );
+                                      }
+                                    : undefined
+                                }
                               />
                             </React.Fragment>
                           )
@@ -1018,6 +1091,7 @@ function App({ workspace, onLock }) {
             workspace={workspace}
             note={contextNote}
             onRestore={(data) => {
+              if (!canLeaveBundle()) return;
               const layout = data.settings?.layout || {};
               setPanels(
                 layout.panels || data.notes.slice(0, 1).map((n) => n.id),
@@ -1274,7 +1348,9 @@ function NotePane({
               </div>
             )}
           </div>
-          <Button icon={Trash2} title="Delete note" onClick={remove} />
+          {remove && (
+            <Button icon={Trash2} title="Delete note" onClick={remove} />
+          )}
         </div>
       </div>
       {showFind && (

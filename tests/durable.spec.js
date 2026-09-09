@@ -18,7 +18,7 @@ test("password setup, lock and login protect notes and attachments", async ({
 }) => {
   await page.goto(BASE);
   await expect(
-    page.getByRole("heading", { name: "Create your workspace password" }),
+    page.getByRole("heading", { name: "Create your administrator account" }),
   ).toBeVisible();
   expect((await page.request.get(BASE + "/api/workspace")).status()).toBe(401);
   await page.getByLabel("Workspace password", { exact: true }).fill(PASSWORD);
@@ -59,7 +59,7 @@ test("password setup, lock and login protect notes and attachments", async ({
     .fill("wrong-password");
   await page.getByRole("button", { name: "Unlock", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText(
-    "Incorrect workspace password",
+    "Incorrect username or password",
   );
   await page.getByLabel("Workspace password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: "Unlock", exact: true }).click();
@@ -633,13 +633,11 @@ test("restoring a different same-size workspace applies its note tabs and pane l
   await page
     .getByRole("button", { name: "Workspace settings", exact: true })
     .click();
-  await page
-    .locator(".workspace-settings input[type=file]")
-    .setInputFiles({
-      name: "restore.zip",
-      mimeType: "application/zip",
-      buffer: zip,
-    });
+  await page.locator(".workspace-settings input[type=file]").setInputFiles({
+    name: "restore.zip",
+    mimeType: "application/zip",
+    buffer: zip,
+  });
   await page
     .getByRole("button", { name: "Confirm restore", exact: true })
     .click();

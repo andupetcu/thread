@@ -20,6 +20,7 @@ function Connected({ initial, App, lock }) {
 export default function WorkspaceGate({ App }) {
   const [auth, setAuth] = useState(null),
     [workspace, setWorkspace] = useState(null),
+    [username, setUsername] = useState("admin"),
     [password, setPassword] = useState(""),
     [confirmation, setConfirmation] = useState(""),
     [error, setError] = useState(""),
@@ -78,7 +79,7 @@ export default function WorkspaceGate({ App }) {
           try {
             await api("/auth/" + (setup ? "setup" : "login"), {
               method: "POST",
-              body: { password },
+              body: { username, password },
             });
             setAuth({ configured: true, authenticated: true });
             setPassword("");
@@ -96,15 +97,27 @@ export default function WorkspaceGate({ App }) {
           thread<span> / local</span>
         </h1>
         <h2>
-          {setup ? "Create your workspace password" : "Unlock your workspace"}
+          {setup
+            ? "Create your administrator account"
+            : "Unlock your workspace"}
         </h2>
         <p>
           {setup
-            ? "One password protects access to your notes on this device."
-            : "Your notes are saved on this device."}
+            ? "Create the first admin for this shared workspace."
+            : "Your notes are saved on this device. Existing workspace passwords belong to the admin account."}
         </p>
         {auth && !migrationError && (
           <>
+            <label>
+              Username
+              <input
+                autoComplete="username"
+                required
+                maxLength={40}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </label>
             <label>
               Workspace password
               <input

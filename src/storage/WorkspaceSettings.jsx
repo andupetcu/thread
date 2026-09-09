@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import AccessSettings from "./AccessSettings";
 export function ConflictReview({ workspace }) {
   return workspace.conflicts.length ? (
     <aside className="conflict-review" role="alert">
@@ -35,8 +36,9 @@ export default function WorkspaceSettings({
   onClose,
   onRestore,
 }) {
+  const admin = workspace.user?.role === "admin";
   const dialog = useRef(),
-    [section, setSection] = useState("backups"),
+    [section, setSection] = useState(admin ? "backups" : "password"),
     [backups, setBackups] = useState([]),
     [trash, setTrash] = useState([]),
     [versions, setVersions] = useState([]),
@@ -49,8 +51,8 @@ export default function WorkspaceSettings({
     [preview, setPreview] = useState(null);
   async function refresh() {
     const [b, t, h] = await Promise.all([
-      api("/backups"),
-      api("/trash"),
+      admin ? api("/backups") : Promise.resolve({ backups: [] }),
+      admin ? api("/trash") : Promise.resolve({ notes: [] }),
       note
         ? api("/notes/" + note.id + "/history")
         : Promise.resolve({ versions: [] }),
@@ -99,17 +101,27 @@ export default function WorkspaceSettings({
         </button>
       </header>
       <nav>
-        {["backups", "trash", "history", "password"].map((s) => (
+        {(admin
+          ? ["backups", "trash", "history", "password", "users", "mcp"]
+          : ["history", "password"]
+        ).map((s) => (
           <button
             key={s}
             aria-pressed={section === s}
             onClick={() => setSection(s)}
           >
-            {s[0].toUpperCase() + s.slice(1)}
+            {s === "mcp" ? "MCP" : s[0].toUpperCase() + s.slice(1)}
           </button>
         ))}
       </nav>
       <div className="settings-body">
+        {admin && ["users", "mcp"].includes(section) && (
+          <AccessSettings
+            key={section}
+            section={section}
+            user={workspace.user}
+          />
+        )}
         {section === "backups" && (
           <>
             <h3>Saved on this device</h3>
@@ -236,7 +248,8 @@ export default function WorkspaceSettings({
                   Preview
                 </button>
                 <button
-                  disabled={busy}
+                  disabled={busy || !admin}
+                  title={admin ? undefined : "Administrator access required"}
                   onClick={() =>
                     setConfirmation({
                       title: "Restore this note version?",
@@ -276,12 +289,12 @@ export default function WorkspaceSettings({
                 setCurrentPassword("");
                 setPassword("");
                 setMessage(
-                  "Password changed. Other sessions have been signed out.",
+                  "Password changed. Your other sessions and agent keys were revoked.",
                 );
               });
             }}
           >
-            <h3>Workspace password</h3>
+            <h3>Password for {workspace.user?.username}</h3>
             <label>
               Current password
               <input
@@ -357,7 +370,11 @@ export function Reauthenticate({ workspace }) {
         onSubmit={async (e) => {
           e.preventDefault();
           try {
-            await api("/auth/login", { method: "POST", body: { password } });
+            const session = await api("/auth/login", {
+              method: "POST",
+              body: { username: workspace.user?.username, password },
+            });
+            workspace.setUser(session.user);
             workspace.setNeedsUnlock(false);
             workspace.setError("");
             await workspace.flush();
@@ -367,7 +384,10 @@ export function Reauthenticate({ workspace }) {
         }}
       >
         <h2 id="unlock-session-title">Unlock to continue saving</h2>
-        <p>Your local drafts are preserved.</p>
+        <p>
+          Your local drafts are preserved. Sign in as {workspace.user?.username}
+          .
+        </p>
         <label>
           Workspace password
           <input

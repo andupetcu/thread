@@ -48,7 +48,7 @@ it("password setup protects workspace, login and logout use a server session", a
   ).toBe(401);
   const login = await f.request("/auth/login", { password: "test-password" });
   expect(login.status).toBe(200);
-  expect(JSON.stringify(f.app.store.getMeta("password"))).not.toContain(
+  expect(JSON.stringify(f.app.store.db.prepare("SELECT password FROM users").all())).not.toContain(
     "test-password",
   );
 });

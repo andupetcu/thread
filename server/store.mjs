@@ -14,6 +14,7 @@ import {
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
+import { OkfStore } from "./okf.mjs";
 const now = () => new Date().toISOString();
 const SAFE = /^[a-zA-Z0-9_-]{1,128}$/;
 export class StoreError extends Error {
@@ -298,7 +299,8 @@ export class WorkspaceStore {
  CREATE VIRTUAL TABLE IF NOT EXISTS note_fts USING fts5(id UNINDEXED,title,body,keywords,tokenize='unicode61');`);
     if (!this.getMeta("workspaceId")) this.setMeta("workspaceId", randomUUID());
     if (!this.getMeta("revision")) this.setMeta("revision", 0);
-    this.setMeta("schemaVersion", 1);
+    if (!this.getMeta("schemaVersion")) this.setMeta("schemaVersion", 1);
+    this.okf = new OkfStore(this);
   }
   close() {
     this.db.close();
@@ -315,13 +317,25 @@ export class WorkspaceStore {
       .run(key, JSON.stringify(value));
   }
   tx(fn) {
+    if (this.transactionActive) return fn();
     this.db.exec("BEGIN IMMEDIATE");
+    this.transactionActive = true;
+    this.afterCommit = [];
     try {
       const value = fn();
       this.db.exec("COMMIT");
+      this.transactionActive = false;
+      for (const effect of this.afterCommit) {
+        try {
+          effect();
+        } catch {}
+      }
+      this.afterCommit = [];
       return value;
     } catch (e) {
       this.db.exec("ROLLBACK");
+      this.transactionActive = false;
+      this.afterCommit = [];
       throw e;
     }
   }
@@ -382,6 +396,7 @@ export class WorkspaceStore {
   }
   workspace() {
     return {
+      bundles: this.okf.list(),
       notes: this.listNotes(),
       trash: this.listTrash(),
       settings: this.settings(),
@@ -414,6 +429,10 @@ export class WorkspaceStore {
       );
   }
   mirror(note) {
+    if (this.transactionActive) {
+      this.afterCommit.push(() => this.mirror(note));
+      return;
+    }
     const file = path.join(this.dir, "notes", note.id + ".md");
     const metadata = {
       id: note.id,
@@ -436,7 +455,14 @@ export class WorkspaceStore {
     writeFileSync(file + ".tmp", contents, { mode: 0o600 });
     renameSync(file + ".tmp", file);
   }
-  saveNote(input, baseRevision) {
+  saveNote(input, baseRevision, options = {}) {
+    if (!options.okfInternal) {
+      const entry = this.okf.byNote(input?.id);
+      if (entry)
+        return this.okf.saveLinkedNote(input, baseRevision, options.actor);
+      input = { ...input };
+      delete input.okf;
+    }
     const note = validateNote(input);
     const current = this.getNote(note.id);
     if ((current?.revision || 0) !== Number(baseRevision))
@@ -569,6 +595,8 @@ export class WorkspaceStore {
     const n = this.getNote(id);
     if (!v || !n) throw new StoreError("Version not found.", 404);
     const previous = JSON.parse(v.data);
+    if (this.okf.byNote(id))
+      return this.okf.restoreDocumentVersion(id, previous);
     return this.saveNote(
       {
         ...previous,
@@ -639,6 +667,7 @@ export class WorkspaceStore {
   }
   backupBytes() {
     const snapshot = {
+      okf: this.okf.snapshot(),
       format: "thread-workspace",
       version: 1,
       created: now(),
@@ -718,6 +747,7 @@ export class WorkspaceStore {
       snapshot,
       files,
     );
+    this.okf.validateSnapshot(snapshot.okf, notes);
     const revisionBase = this.getMeta("revision") || 0;
     for (const n of notes)
       if (!Number.isSafeInteger(revisionBase + n.revision + 1))
@@ -761,6 +791,7 @@ export class WorkspaceStore {
               JSON.stringify(saved),
             );
         }
+        this.okf.restoreSnapshot(snapshot.okf, revisionBase);
         for (const n of this.listNotes()) this.index(n);
         for (const v of versions)
           this.db
@@ -807,6 +838,8 @@ export class WorkspaceStore {
       !["merge", "replace", "update"].includes(mode)
     )
       throw new StoreError("Invalid note import.");
+    if (records.some((n) => this.okf.byNote(n?.id) || n?.okf))
+      throw new StoreError("Use bundle operations to change bundle documents.");
     const notes = records.map(validateNote);
     if (new Set(notes.map((n) => n.id)).size !== notes.length)
       throw new StoreError("Duplicate note IDs in import.");
@@ -821,7 +854,9 @@ export class WorkspaceStore {
       ...existing
         .filter((n) => !importedIds.has(n.id))
         .map((n) =>
-          mode === "replace" && !requestedIds.has(n.id)
+          mode === "replace" &&
+          !requestedIds.has(n.id) &&
+          !this.okf.byNote(n.id)
             ? { ...n, deletedAt: n.deletedAt || now() }
             : { ...n },
         ),

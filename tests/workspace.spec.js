@@ -194,7 +194,7 @@ test("backup, Markdown import, note search, graph inspection and responsive layo
   const files = unzipSync(await fs.readFile(file));
   expect(
     JSON.parse(strFromU8(files["workspace.json"])).notes.filter(
-      (n) => !n.deletedAt,
+      (n) => !n.deletedAt && !n.okf,
     ),
   ).toHaveLength(7);
   await page.locator("input[type=file]").setInputFiles({

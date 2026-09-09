@@ -164,7 +164,13 @@ function transform(url) {
       ? "#note-" + url.slice(5)
       : defaultUrlTransform(url);
 }
-export default function Render({ note, notes, open, offset = 0 }) {
+export default function Render({
+  note,
+  notes,
+  open,
+  offset = 0,
+  resolveImage,
+}) {
   const edit = useContext(EditContext),
     blocks = useMemo(
       () => new Map(parseBlocks(note.body).map((b) => [b.start, b])),
@@ -174,7 +180,9 @@ export default function Render({ note, notes, open, offset = 0 }) {
     <RenderContext.Provider value={{ note, notes, open, offset, edit, blocks }}>
       <Markdown
         remarkPlugins={plugins}
-        urlTransform={transform}
+        urlTransform={(url, key) =>
+          transform(key === "src" && resolveImage ? resolveImage(url) : url)
+        }
         components={components}
       >
         {note.body}

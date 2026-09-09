@@ -212,3 +212,33 @@
   color: var(--muted);
   padding: 4px 12px;
 }
+.workspace-settings nav {
+  flex-wrap: wrap;
+}
+.workspace-settings select {
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+.account-row,
+.mcp-key-row {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.agent-secret {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+.mcp-config {
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 16px;
+  background: var(--bg);
+  border-radius: 8px;
+}

@@ -1,0 +1,572 @@
+.okf-sidebar {
+  border-top: 1px solid var(--border);
+  padding-top: 15px;
+  margin-bottom: 17px;
+}
+.okf-bundle-list {
+  max-height: 145px;
+  overflow: auto;
+}
+.okf-bundle-list > button {
+  width: 100%;
+  justify-content: flex-start;
+  color: var(--muted);
+  font-size: 12px;
+}
+.okf-bundle-list > button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.okf-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.okf-toolbar {
+  min-height: 53px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.okf-toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.okf-toolbar > div:first-child svg {
+  color: var(--accent);
+}
+.okf-toolbar > div:first-child span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.okf-toolbar > div:last-child {
+  justify-content: flex-end;
+}
+.okf-view-switch {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 2px;
+}
+.okf-view-switch button {
+  font-size: 11px;
+  padding: 6px 8px;
+}
+.okf-main {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+.okf-browser {
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--sidebar) 72%, var(--panel));
+  overflow: auto;
+}
+.okf-browser-title {
+  height: 45px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+}
+.okf-tree {
+  padding: 8px;
+}
+.okf-tree button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  color: var(--muted);
+  font-size: 11px;
+}
+.okf-tree button span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.okf-tree button small {
+  font-size: 9px;
+}
+.okf-document {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.okf-document-head {
+  min-height: 75px;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.okf-document-head small {
+  color: var(--accent);
+}
+.okf-document-head h1 {
+  font-size: 18px;
+  margin: 5px 0 0;
+}
+.okf-document-head > div:last-child {
+  display: flex;
+  gap: 4px;
+}
+.okf-document-head button {
+  font-size: 11px;
+}
+.okf-editor-tabs {
+  height: 43px;
+  padding: 5px 18px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.okf-editor-tabs span {
+  flex: 1;
+}
+.okf-authoring {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 270px;
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+}
+.okf-concept {
+  min-width: 0;
+  padding: 25px clamp(20px, 5vw, 70px) 80px;
+}
+.okf-prose {
+  max-width: 760px;
+  margin: 0 auto;
+}
+.okf-body-source,
+.okf-source {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  color: var(--text);
+  background: var(--code);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 15px;
+  font:
+    12px/1.65 ui-monospace,
+    SFMono-Regular,
+    monospace;
+}
+.okf-source {
+  min-height: 58vh;
+}
+.okf-concept .block-editor {
+  margin-top: 14px;
+}
+.okf-metadata {
+  border-left: 1px solid var(--border);
+  padding: 20px 16px 80px;
+  background: var(--panel);
+}
+.okf-metadata h3 {
+  margin: 0 0 18px;
+}
+.okf-metadata label,
+.okf-dialog > label {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.okf-metadata input,
+.okf-metadata select,
+.okf-metadata textarea {
+  width: 100%;
+  margin-top: 3px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 8px;
+  resize: vertical;
+}
+.okf-metadata details {
+  border-top: 1px solid var(--border);
+  padding: 12px 0;
+}
+.okf-metadata summary {
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+.okf-preserved,
+.okf-dialog pre {
+  max-height: 220px;
+  overflow: auto;
+  background: var(--code);
+  border: 1px solid var(--border);
+  padding: 10px;
+  white-space: pre-wrap;
+}
+.okf-savebar {
+  position: absolute;
+  bottom: 38px;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  z-index: 3;
+  padding: 8px 10px 8px 16px;
+  background: var(--sidebar);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px #0005;
+  font-size: 11px;
+}
+.okf-savebar .primary,
+.okf-dialog .primary {
+  background: var(--accent);
+  color: #171625;
+}
+.okf-history {
+  display: flex;
+  gap: 15px;
+  padding: 9px 20px;
+  align-items: center;
+  background: var(--accent-bg);
+  font-size: 11px;
+}
+.okf-history p {
+  margin: 0 0 0 auto;
+  color: var(--muted);
+}
+.okf-list,
+.okf-health,
+.okf-graph {
+  flex: 1;
+  overflow: auto;
+  padding: 30px;
+}
+.okf-list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.okf-list th,
+.okf-list td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.okf-list th {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.okf-list tr {
+  cursor: pointer;
+}
+.okf-list tr:hover {
+  background: var(--hover);
+}
+.okf-health > header {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+.okf-health h2,
+.okf-health p {
+  margin: 2px 0;
+}
+.okf-health > button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 10px 220px 1fr;
+  text-align: left;
+  justify-content: stretch;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 14px;
+}
+.okf-severity {
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #e4b76d;
+}
+.okf-severity.error {
+  background: #ef8585;
+}
+.okf-graph {
+  text-align: center;
+  padding-top: 32px;
+}
+.okf-graph > svg:not(.okf-graph-canvas) {
+  color: var(--accent);
+}
+.okf-graph > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  margin: 40px auto;
+  max-width: 760px;
+}
+.okf-graph > svg.okf-graph-canvas {
+  display: block;
+  width: min(100%, 920px);
+  height: min(50vh, 500px);
+  margin: 20px auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.okf-graph svg line {
+  stroke: var(--graph-edge);
+  stroke-width: 2;
+}
+.okf-graph svg line.source {
+  stroke: var(--accent);
+  stroke-dasharray: 5 4;
+}
+.okf-graph svg line.broken {
+  stroke: #ef8585;
+}
+.okf-graph svg g {
+  cursor: pointer;
+}
+.okf-graph svg rect {
+  fill: var(--bg);
+  stroke: var(--border);
+}
+.okf-graph svg g:focus rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.okf-graph svg text {
+  fill: var(--text);
+  font-size: 11px;
+  text-anchor: middle;
+}
+.okf-graph svg text.type {
+  fill: var(--muted);
+  font-size: 9px;
+}
+.okf-edges {
+  max-width: 820px;
+  margin: 0 auto;
+  text-align: left;
+}
+.okf-edges p {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 8px;
+}
+.okf-edges span,
+.okf-edges em {
+  color: var(--muted);
+  font-size: 10px;
+}
+.okf-graph > div button {
+  min-width: 160px;
+  display: grid;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 16px;
+}
+.okf-graph button small {
+  margin-top: 5px;
+}
+.okf-asset,
+.okf-loading {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  color: var(--muted);
+}
+.okf-asset img {
+  max-width: min(720px, 85%);
+  max-height: 55vh;
+  object-fit: contain;
+  border: 1px solid var(--border);
+}
+.okf-text-asset {
+  width: min(720px, 100%);
+  max-height: 55vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+  padding: 16px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: var(--panel);
+}
+.okf-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #080910b8;
+  backdrop-filter: blur(3px);
+}
+.okf-dialog {
+  width: min(560px, 100%);
+  max-height: 85vh;
+  overflow: auto;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 20px 70px #0009;
+}
+.okf-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.okf-dialog h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.okf-dialog input {
+  width: 100%;
+  background: var(--bg);
+}
+.okf-check,
+.okf-note-choices label,
+.okf-file-button {
+  display: flex !important;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px;
+}
+.okf-check input,
+.okf-note-choices input {
+  width: auto;
+}
+.okf-note-choices {
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  margin-bottom: 15px;
+  border: 1px solid var(--border);
+}
+.okf-transfer-picks {
+  display: flex;
+  gap: 8px;
+}
+.okf-file-button {
+  cursor: pointer;
+  padding: 7px 9px;
+  border-radius: 5px;
+}
+.okf-file-button:hover {
+  background: var(--hover);
+}
+.okf-file-button input {
+  display: none;
+}
+.okf-import-preview > div,
+.okf-change-preview > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px;
+  border-bottom: 1px solid var(--border);
+}
+
+@media (max-width: 1100px) {
+  .okf-toolbar {
+    grid-template-columns: 1fr auto;
+  }
+  .okf-toolbar > div:last-child {
+    display: none;
+  }
+  .okf-authoring {
+    grid-template-columns: 1fr;
+  }
+  .okf-metadata {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+@media (max-width: 700px) {
+  .okf-toolbar {
+    display: flex;
+    overflow-x: auto;
+  }
+  .okf-toolbar > div:first-child span {
+    display: none;
+  }
+  .okf-view-switch {
+    margin-left: auto;
+  }
+  .okf-view-switch button {
+    font-size: 0;
+  }
+  .okf-main {
+    grid-template-columns: 1fr;
+  }
+  .okf-browser {
+    max-height: 165px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .okf-document-head {
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .okf-document-head > div:last-child {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .okf-document-head button {
+    font-size: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .okf-dialog-backdrop {
+    backdrop-filter: none;
+  }
+}
+
+.okf-review-state {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.okf-review-state strong,
+.okf-remote-notice {
+  color: var(--accent);
+}
+.okf-remote-notice {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.okf-workspace[inert] {
+  opacity: 0.75;
+  cursor: progress;
+}

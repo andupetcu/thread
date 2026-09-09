@@ -5,6 +5,10 @@ import { afterEach, it, expect } from "vitest";
 import BlockEditor from "../src/BlockEditor";
 import { parseBlocks } from "../src/editor-model";
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+// JSDOM has element geometry stubs but no Range geometry. Tiptap's deferred
+// focus measures a text range; actual positioning is covered by browser tests.
+Range.prototype.getClientRects ??= () => [];
+Range.prototype.getBoundingClientRect ??= () => new DOMRect();
 let root, container, body;
 async function mount(source) {
   body = source;
@@ -55,6 +59,9 @@ it("changes the Markdown structure through the formatting toolbar", async () => 
   await mount("A paragraph");
   await click("Edit block 1");
   await click("Heading");
+  await act(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
   expect(parseBlocks(body)[0].source).toBe("## A paragraph");
   await click("Source");
   expect(container.querySelector("textarea").value).toBe("## A paragraph");
