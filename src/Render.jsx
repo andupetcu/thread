@@ -139,7 +139,24 @@ const components = {
     ]),
   ),
 };
-const plugins = [remarkGfm];
+// Remove reserved metadata from the rendered tree, not from the source: block
+// references and diagram edits still depend on the original source offsets.
+function hideBlockMetadata() {
+  return function visit(node) {
+    if (!node.children) return;
+    node.children = node.children.filter(
+      (child) =>
+        !(
+          child.type === "html" &&
+          /^<!-- thread:block(?: id=[A-Za-z0-9_-]+)? -->$/.test(
+            child.value.trim(),
+          )
+        ),
+    );
+    node.children.forEach(visit);
+  };
+}
+const plugins = [remarkGfm, hideBlockMetadata];
 function transform(url) {
   return url.startsWith("block:")
     ? "#" + url

@@ -55,7 +55,7 @@ import { metadata, searchNotes, validateBackup, initialNotes } from "./model";
 import "./style.css";
 const BlockEditor = lazy(() => import("./BlockEditor"));
 import ContextPanel from "./ContextPanel";
-import { suggestions } from "./editor-model";
+import { parseBlocks, suggestions } from "./editor-model";
 const KEY = "thread.notes.v1";
 function safeTheme() {
   try {
@@ -1106,6 +1106,17 @@ function NotePane({
     [exports, setExports] = useState(false),
     [blockMode, setBlockMode] = useState(false);
   const input = useRef();
+  const sourceDiagrams = useMemo(
+    () =>
+      editing
+        ? parseBlocks(note.body).filter(
+            (block) =>
+              block.type === "code" &&
+              /^(`{3,}|~{3,})thread-diagram\b/.test(block.source),
+          )
+        : [],
+    [editing, note.body],
+  );
   const meta = metadata(note.body);
   const backlinks = notes.filter((n) =>
     metadata(n.body).links.includes(note.id),
@@ -1347,6 +1358,27 @@ function NotePane({
               Markdown <span> / for blocks</span>
             </span>
           </div>
+        )}
+        {editing && sourceDiagrams.length > 0 && (
+          <section
+            className="source-diagrams"
+            aria-label="Diagrams in this note"
+          >
+            <h3>Diagrams</h3>
+            <p>
+              Edit diagrams visually here. Their Markdown data remains in the
+              source below.
+            </p>
+            {sourceDiagrams.map((block, index) => (
+              <Render
+                key={block.id || index}
+                note={{ ...note, body: block.source }}
+                notes={notes}
+                open={open}
+                offset={block.start}
+              />
+            ))}
+          </section>
         )}
         {editing && (
           <div className="editor-wrap">
