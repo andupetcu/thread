@@ -1,0 +1,214 @@
+.workspace-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg, #131619);
+  color: var(--text, #dedfdf);
+}
+.workspace-gate form {
+  width: min(420px, 90vw);
+  padding: 36px;
+  border: 1px solid var(--border, #30363b);
+  border-radius: 16px;
+  background: var(--panel, #1b1f23);
+  display: grid;
+  gap: 16px;
+}
+.workspace-gate h1 {
+  margin: 0;
+  font-size: 27px;
+}
+.workspace-gate h1 span {
+  font-weight: 400;
+  color: #929b9b;
+}
+.workspace-gate h2 {
+  font-size: 19px;
+  margin: 8px 0 0;
+}
+.workspace-gate p,
+.workspace-gate small {
+  line-height: 1.6;
+  color: #9ea9ad;
+}
+.workspace-gate label,
+.workspace-settings label {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  margin: 8px 0;
+}
+.workspace-gate input,
+.workspace-settings input {
+  padding: 10px;
+  background: var(--bg, #131619);
+  border: 1px solid var(--border, #30363b);
+  border-radius: 6px;
+  color: inherit;
+}
+.workspace-gate button {
+  justify-content: center;
+  padding: 12px;
+}
+.workspace-settings {
+  width: min(760px, 92vw);
+  max-height: 85vh;
+  padding: 0;
+  background: var(--panel, #1b1f23);
+  color: var(--text, #dedfdf);
+  border: 1px solid var(--border, #30363b);
+  border-radius: 12px;
+}
+.workspace-settings::backdrop {
+  background: #0009;
+  backdrop-filter: blur(3px);
+}
+.workspace-settings header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.workspace-settings h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.workspace-settings nav {
+  display: flex;
+  gap: 8px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.workspace-settings nav button[aria-pressed="true"] {
+  background: var(--accent-dim, #24413d);
+  color: var(--accent, #82c7b7);
+}
+.settings-body {
+  padding: 24px;
+}
+.settings-body p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted, #9ca6ab);
+}
+.settings-actions,
+.settings-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.settings-row {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0;
+}
+.settings-row > span {
+  flex: 1;
+}
+.settings-row small {
+  display: block;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.storage-path {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+}
+.file-button input {
+  max-width: 220px;
+}
+.restore-confirm,
+.conflict-review {
+  padding: 18px;
+  background: var(--panel, #20262b);
+  border: 1px solid #aa8b54;
+  border-radius: 8px;
+}
+.conflict-review {
+  position: fixed;
+  bottom: 35px;
+  left: 20%;
+  right: 20%;
+  z-index: 1000;
+  max-height: 70vh;
+  overflow: auto;
+}
+.conflict-text {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.conflict-text pre,
+.version-preview {
+  white-space: pre-wrap;
+  max-height: 230px;
+  overflow: auto;
+  font-size: 12px;
+}
+.conflict-review button {
+  margin: 8px 8px 0 0;
+}
+.workspace-tabs {
+  display: flex;
+  gap: 3px;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+  padding: 4px 12px;
+  flex-shrink: 0;
+}
+.workspace-tab {
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--border);
+}
+.workspace-tab.active {
+  background: var(--hover);
+}
+.workspace-tab button {
+  white-space: nowrap;
+  font-size: 12px;
+}
+.workspace-tab button:first-child {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.pane-resizer {
+  width: 5px;
+  min-width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  border: 0;
+  padding: 0 !important;
+  align-self: stretch;
+}
+.pane-resizer:hover,
+.pane-resizer:focus {
+  background: var(--accent);
+}
+.note-location {
+  display: flex;
+  gap: 6px;
+  padding: 6px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.note-location select {
+  max-width: 180px;
+}
+.notebook-tools {
+  padding: 10px 14px;
+  display: flex;
+  gap: 6px;
+}
+.notebook-tools select {
+  min-width: 0;
+  flex: 1;
+}
+.disk-status {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 12px;
+}

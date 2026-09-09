@@ -1,0 +1,37 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+.DS_Store
+
+# Local workspaces, attachments, backups, and generated artifacts
+/tmp/
+/data/
+/workspace/
+/workspaces/
+/backups/
+/assets/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.zip
+*.log
+
+# Local secrets and authentication state
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+storage-state*.json
+storageState*.json
+.auth/
+playwright/.auth/

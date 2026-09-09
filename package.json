@@ -1,0 +1,55 @@
+{
+  "name": "thread-notes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server/dev.mjs",
+    "build": "vite build",
+    "preview": "node server/start.mjs",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "format": "prettier --write src tests *.js *.json *.html README.md docs",
+    "start": "node server/start.mjs",
+    "reset-password": "node server/reset-password.mjs",
+    "benchmark": "node scripts/benchmark.mjs"
+  },
+  "dependencies": {
+    "@tiptap/extension-code-block-lowlight": "^3.31.3",
+    "@tiptap/extension-image": "^3.31.3",
+    "@tiptap/extension-link": "^3.31.3",
+    "@tiptap/extension-table": "^3.31.3",
+    "@tiptap/extension-task-item": "^3.31.3",
+    "@tiptap/extension-task-list": "^3.31.3",
+    "@tiptap/markdown": "^3.31.3",
+    "@tiptap/react": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
+    "@xyflow/react": "^12.11.6",
+    "d3-force": "^3.0.0",
+    "diff": "^8.0.4",
+    "docx": "^9.0.0",
+    "fflate": "^0.8.3",
+    "highlight.js": "^11.12.0",
+    "html-to-image": "^1.11.13",
+    "jspdf": "^4.2.1",
+    "lowlight": "^3.3.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.0.0",
+    "remark-gfm": "^4.0.0",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "jsdom": "^30.0.1",
+    "prettier": "^3.9.6",
+    "vite": "^6.0.0",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
