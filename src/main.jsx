@@ -37,6 +37,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import Render, { EditContext } from "./Render";
+import NoteAttachments from "./NoteAttachments";
 import NotebookTools, {
   NoteLocation,
   orderedTree,
@@ -225,7 +226,13 @@ function App({ workspace, onLock }) {
   const update = (id, patch) =>
     setNotes((p) =>
       p.map((n) =>
-        n.id === id ? { ...n, ...patch, updated: new Date().toISOString() } : n,
+        n.id === id
+          ? {
+              ...n,
+              ...(typeof patch === "function" ? patch(n) : patch),
+              updated: new Date().toISOString(),
+            }
+          : n,
       ),
     );
   const open = (id, index = 0, blockId) => {
@@ -1278,6 +1285,15 @@ function NotePane({
           ))}
         </select>
         <div>
+          <NoteAttachments
+            key={note.id}
+            onAttach={(markdown) =>
+              update(note.id, (current) => ({
+                body:
+                  current.body + (current.body ? "\n\n" : "") + markdown + "\n",
+              }))
+            }
+          />
           <Button
             icon={editing ? Eye : Code2}
             title={editing ? "Preview note" : "Edit Markdown"}

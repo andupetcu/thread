@@ -416,6 +416,34 @@ main {
   padding: 5px;
   color: var(--muted);
 }
+.note-attachments {
+  position: relative;
+}
+.note-attachments > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.attachment-error {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 30;
+  width: 260px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1100px) {
+  .note-attachments > button > span {
+    display: none;
+  }
+}
 .note-scroll {
   overflow: auto;
   flex: 1;
