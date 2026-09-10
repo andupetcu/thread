@@ -392,3 +392,50 @@ test("native typed labels paint on canvas and refresh an existing blank PNG", as
     "Typed root remains visible",
   );
 });
+
+test("drawing surface fills the fullscreen canvas after resize", async ({
+  page,
+}) => {
+  await createMap(page, "Full canvas", {
+    version: 2,
+    engine: "drawnix",
+    elements: [],
+    references: [],
+    viewport: { zoom: 0.8 },
+  });
+  for (const size of [
+    { width: 1440, height: 1000 },
+    { width: 1100, height: 1300 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(size);
+    const canvas = page.locator(".mindmap-canvas");
+    const svg = canvas.locator(".board-host-svg");
+    await expect(svg).toBeVisible();
+    await expect
+      .poll(async () => {
+        const host = await canvas.boundingBox();
+        const surface = await svg.boundingBox();
+        return surface.height - host.height;
+      })
+      .toBeGreaterThanOrEqual(0);
+    await expect
+      .poll(async () => {
+        const host = await canvas.boundingBox();
+        const surface = await svg.boundingBox();
+        return surface.width - host.width;
+      })
+      .toBeGreaterThanOrEqual(0);
+    for (const selector of [
+      ".plait-board-container",
+      ".viewport-container",
+      ".board-active-svg",
+    ]) {
+      const rect = await canvas.locator(selector).boundingBox();
+      const host = await canvas.boundingBox();
+      expect(Math.abs(rect.height - host.height)).toBeLessThan(2);
+      expect(Math.abs(rect.width - host.width)).toBeLessThan(2);
+      expect(Math.abs(rect.y - host.y)).toBeLessThan(2);
+    }
+  }
+});

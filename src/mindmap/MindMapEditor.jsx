@@ -4,6 +4,7 @@ import { BoardTransforms, getSelectedElements } from "@plait/core";
 import { parseMarkdownToDrawnix } from "@plait-board/markdown-to-drawnix";
 import { parseMindMap } from "./model.js";
 import ReferencePanel, { followReference } from "../visual/ReferencePanel.jsx";
+import "plait-board.css";
 import "drawnix.css";
 const serial = (d) => JSON.stringify(parseMindMap(d));
 function download(content, name, type = "application/json") {

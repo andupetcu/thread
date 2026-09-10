@@ -5,6 +5,10 @@ export default defineConfig({
   resolve: {
     dedupe: ["react", "react-dom"],
     alias: {
+      "plait-board.css": new URL(
+        "./node_modules/@plait-board/react-board/index.css",
+        import.meta.url,
+      ).pathname,
       "drawnix.css": new URL(
         "./node_modules/@drawnix/drawnix/index.css",
         import.meta.url,
