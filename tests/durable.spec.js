@@ -1,3 +1,4 @@
+import { importDrawio } from "./native-diagram-helpers.js";
 import {
   test,
   expect,
@@ -318,9 +319,7 @@ test("integrated diagram saves as a visual note block and reopens on mobile", as
   await expect(
     page.getByRole("dialog", { name: "Edit diagram", exact: true }),
   ).toBeVisible();
-  await page.getByLabel("Diagram template").selectOption("decision");
-  await page.getByRole("button", { name: "Add database", exact: true }).click();
-  await page.getByLabel("Shape label").fill("Decision archive");
+  await importDrawio(page, "Decision archive");
   await page.getByRole("button", { name: "Save diagram", exact: true }).click();
   await expect(page.locator(".diagram-preview:visible")).toBeVisible();
   await expect
@@ -335,13 +334,14 @@ test("integrated diagram saves as a visual note block and reopens on mobile", as
   await page.reload();
   await expect(page.locator(".diagram-preview:visible")).toBeVisible();
   await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
-  await expect(page.locator(".react-flow__node")).toHaveCount(4);
-  await page.locator(".react-flow__node").first().click();
-  await page.getByLabel("Shape label").fill("Uncommitted mobile edit");
+  await importDrawio(page, "Uncommitted mobile edit");
   const disk = (await workspace(page)).notes.find((n) => n.id === note.id);
   const fence = disk.body.match(/```thread-diagram\n([\s\S]*?)\n```/);
   const remoteDiagram = JSON.parse(fence[1]);
-  remoteDiagram.nodes[0].data.label = "Remote diagram change";
+  remoteDiagram.xml = remoteDiagram.xml.replace(
+    "Decision archive",
+    "Remote diagram change",
+  );
   const remoteSave = await page.request.put(BASE + "/api/notes/" + note.id, {
     headers,
     data: {
@@ -353,14 +353,9 @@ test("integrated diagram saves as a visual note block and reopens on mobile", as
     },
   });
   expect(remoteSave.ok()).toBe(true);
-  await expect
-    .poll(() => page.locator(".diagram-preview").first().getAttribute("alt"), {
-      timeout: 10000,
-    })
-    .toContain("Remote diagram change");
-  await expect(page.getByLabel("Shape label")).toHaveValue(
-    "Uncommitted mobile edit",
-  );
+  await expect(
+    page.getByRole("alertdialog", { name: "Diagram conflict" }),
+  ).toBeVisible({ timeout: 10000 });
   await page.screenshot({ path: testInfo.outputPath("diagram-desktop.png") });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
@@ -371,17 +366,14 @@ test("integrated diagram saves as a visual note block and reopens on mobile", as
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await expect(page.getByLabel("Shape label")).toHaveValue(
-    "Uncommitted mobile edit",
-  );
   await page.screenshot({ path: testInfo.outputPath("diagram-mobile.png") });
-  await page.getByRole("button", { name: "Save diagram", exact: true }).click();
-  await expect(page.getByRole("alertdialog")).toContainText(
-    "Diagram changed in another session",
-  );
+  await expect(
+    page.getByRole("button", { name: "Save diagram", exact: true }),
+  ).toBeDisabled();
   await page
-    .getByRole("button", { name: "Replace with my diagram", exact: true })
+    .getByRole("button", { name: "Keep my draft", exact: true })
     .click();
+  await page.getByRole("button", { name: "Save diagram", exact: true }).click();
   await expect
     .poll(
       async () =>

@@ -1,10 +1,11 @@
+import { mindNode } from "./native-mindmap-helpers.js";
 import { it, expect } from "vitest";
 import {
   diagramFences,
   replaceDiagramFence,
 } from "../src/diagram/note-diagrams.js";
 import { metadata, templates } from "../src/model.js";
-import { defaultMindMap, addIdea, updateIdea } from "../src/mindmap/model.js";
+import { defaultMindMap } from "../src/mindmap/model.js";
 import { clearPersistedMindMapDrafts } from "../src/mindmap/recovery.js";
 import { richFallbackReason } from "../src/rich/model.js";
 const fence = (language, value) =>
@@ -21,7 +22,10 @@ it("keeps diagram ordinals independent of mind maps and edits nested map fences 
   expect(diagramFences(body).map((f) => f.diagramIndex)).toEqual([0, 1]);
   const maps = diagramFences(body, "thread-mindmap");
   expect(maps).toHaveLength(1);
-  const changed = updateIdea(map, map.rootId, { label: "Changed idea" });
+  const changed = {
+    ...map,
+    elements: [mindNode("Changed idea", "x")],
+  };
   const next = replaceDiagramFence(
     body,
     maps[0],
@@ -30,14 +34,15 @@ it("keeps diagram ordinals independent of mind maps and edits nested map fences 
   );
   expect(diagramFences(next)).toHaveLength(2);
   expect(
-    JSON.parse(diagramFences(next, "thread-mindmap")[0].value).nodes[0].label,
+    JSON.parse(diagramFences(next, "thread-mindmap")[0].value).elements[0].data
+      .topic.children[0].text,
   ).toBe("Changed idea");
 });
 it("adds mind-map links to backlinks and protects its native source in rich editing", () => {
   let map = defaultMindMap();
-  map = updateIdea(map, map.rootId, {
-    link: { kind: "note", noteId: "target" },
-  });
+  map.references = [
+    { id: "r", label: "Target", link: { kind: "note", noteId: "target" } },
+  ];
   const body = fence("thread-mindmap", map);
   expect(metadata(body).links).toContain("target");
   expect(metadata("````md\n" + body + "\n````").links).toEqual([]);
@@ -48,7 +53,10 @@ it("adds mind-map links to backlinks and protects its native source in rich edit
 });
 it("clears only mind-map recovery matching a successful outer concept save", () => {
   const map = defaultMindMap(),
-    changed = addIdea(map, map.rootId, "Pending");
+    changed = {
+      ...map,
+      elements: [mindNode("Pending", "pending")],
+    };
   const key = "thread-mindmap-draft:note:diagram-0";
   const values = new Map([[key, JSON.stringify({ document: changed })]]);
   const storage = {

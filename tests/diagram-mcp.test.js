@@ -56,15 +56,10 @@ it("speaks diagram MCP over real stdio with inert proposals, strict schemas and 
       "validate_bundle",
     ]);
     const original = {
-      version: 1,
-      nodes: [
-        {
-          id: "a",
-          position: { x: 0, y: 0 },
-          data: { shape: "process", label: "Original", color: "#ffffff" },
-        },
-      ],
-      edges: [],
+      version: 3,
+      engine: "drawio",
+      xml: '<mxGraphModel><root><mxCell id="0" value="Original"/></root></mxGraphModel>',
+      references: [],
     };
     const note = app.store.saveNote(
       {
@@ -86,7 +81,7 @@ it("speaks diagram MCP over real stdio with inert proposals, strict schemas and 
     });
     expect(JSON.parse(read.content[0].text).revision).toBe(1);
     const proposed = structuredClone(original);
-    proposed.nodes[0].data.label = "Proposed";
+    proposed.xml = proposed.xml.replace("Original", "Proposed");
     const input = {
       noteId: note.id,
       diagramIndex: 0,

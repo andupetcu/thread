@@ -1,131 +1,166 @@
 import { test, expect } from "@playwright/test";
-test("visual diagram saves shapes and connectors, supports undo, and protects unsaved edits", async ({
+import { importDrawio } from "./native-diagram-helpers.js";
+test("local draw.io imports native XML, edits shapes, saves preview and exports source", async ({
   page,
 }) => {
+  const external = [];
+  page.on("request", (r) => {
+    if (
+      /^https?:/.test(r.url()) &&
+      !r.url().startsWith("http://127.0.0.1:5173")
+    )
+      external.push(r.url());
+  });
   await page.goto("http://127.0.0.1:5173/tests/diagram-harness.html");
   await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
-  await page.getByRole("button", { name: "Add process", exact: true }).click();
-  await page.getByLabel("Shape label").fill("First step");
-  await page.getByRole("button", { name: "Add decision", exact: true }).click();
-  await page.getByLabel("Shape label").fill("Ready?");
-  await page.getByLabel("Connect from").selectOption({ label: "First step" });
-  await page.getByLabel("Connect to").selectOption({ label: "Ready?" });
-  await page
-    .getByRole("button", { name: "Add connector", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Save diagram", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  let data = JSON.parse(await page.locator("#saved").textContent());
-  expect(data.nodes.map((n) => n.data.label)).toEqual(["First step", "Ready?"]);
-  expect(data.edges).toHaveLength(1);
-  await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
-  await page.getByRole("button", { name: "Add database", exact: true }).click();
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
-  await expect(page.locator(".react-flow__node")).toHaveCount(2);
-  await page.getByRole("button", { name: "Redo", exact: true }).click();
-  await expect(page.locator(".react-flow__node")).toHaveCount(3);
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("alertdialog")).toBeVisible();
-  await expect(page.locator(".diagram-workspace")).toHaveAttribute("inert", "");
-  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Close diagram", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Discard changes", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
-  await expect(page.locator(".react-flow__node")).toHaveCount(2);
-});
-test("drag positions undo and PNG export retains diagram content", async ({
-  page,
-}) => {
-  await page.goto("http://127.0.0.1:5173/tests/diagram-harness.html");
-  await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
-  await page.getByLabel("Diagram template").selectOption("flow");
-  const node = page.locator(".react-flow__node").first();
-  const before = await node.boundingBox();
-  await node.hover();
-  await page.mouse.down();
-  await page.mouse.move(
-    before.x + before.width / 2 + 130,
-    before.y + before.height / 2 + 80,
-    { steps: 8 },
+  await importDrawio(page, "Native process");
+  const editor = page.frameLocator('iframe[title="draw.io diagram editor"]');
+  await expect(editor.locator(".geDiagramContainer")).toContainText(
+    "Native process",
   );
-  await page.mouse.up();
-  const moved = await node.boundingBox();
-  expect(moved.x).toBeGreaterThan(before.x + 50);
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
-  await expect(page.locator(".react-flow__node")).toHaveCount(3);
-  await expect(node).toHaveAttribute("style", /translate\(0px, 0px\)/);
   await page.getByRole("button", { name: "Save diagram", exact: true }).click();
-  const png = await page.evaluate(async () => {
-    const { diagramToPng } = await import("/src/diagram/model.js");
-    return diagramToPng(document.querySelector("#saved").textContent);
-  });
-  expect(png).toMatch(/^data:image\/png;base64,/);
-  expect(png.length).toBeGreaterThan(3000);
-});
-
-test("palette drops and keyboard selection/delete work", async ({ page }) => {
-  await page.goto("http://127.0.0.1:5173/tests/diagram-harness.html");
+  await expect(
+    page.getByRole("dialog", { name: "Edit diagram", exact: true }),
+  ).toHaveCount(0, { timeout: 30000 });
+  const data = JSON.parse(await page.locator("#saved").textContent());
+  expect(data.engine).toBe("drawio");
+  expect(data.xml).toContain("Native process");
+  expect(data.preview).toMatch(/^data:image\/png;base64,/);
+  await expect(
+    page.getByAltText("Diagram preview", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
-  const transfer = await page.evaluateHandle(() => new DataTransfer());
+  await expect(
+    page.getByRole("button", { name: "Save diagram", exact: true }),
+  ).toBeEnabled();
   await page
-    .getByRole("button", { name: "Add database", exact: true })
-    .dispatchEvent("dragstart", { dataTransfer: transfer });
-  await page.locator(".diagram-canvas").dispatchEvent("drop", {
-    dataTransfer: transfer,
-    clientX: 600,
-    clientY: 350,
-  });
-  await expect(page.locator(".react-flow__node")).toHaveCount(1);
-  await expect(page.getByLabel("Shape label")).toHaveValue("Database");
-  const node = page.locator(".react-flow__node");
-  await node.focus();
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("Delete");
-  await expect(page.locator(".react-flow__node")).toHaveCount(0);
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
-  await expect(page.locator(".react-flow__node")).toHaveCount(1);
+    .getByRole("button", { name: "References and library", exact: true })
+    .click();
+  const wait = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Export .drawio", exact: true })
+    .click();
+  expect((await wait).suggestedFilename()).toBe("diagram.drawio");
+  expect(external).toEqual([]);
 });
-
-test("external diagram updates require review and preserve a downloadable local draft", async ({
+test("draw.io recovery and remote conflicts require explicit choices", async ({
   page,
-}, testInfo) => {
+}) => {
   await page.goto("http://127.0.0.1:5173/tests/diagram-harness.html");
   await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
-  await page.getByRole("button", { name: "Add process", exact: true }).click();
-  await page.getByLabel("Shape label").fill("My unfinished draft");
+  await importDrawio(page, "Unfinished");
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("thread-diagram-draft:harness")),
+    )
+    .toContain("Unfinished");
+  await page.reload();
+  await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
+  await expect(
+    page.getByRole("alertdialog", { name: "Recover diagram draft" }),
+  ).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+s");
+  await expect(page.locator("#saved")).toBeEmpty();
+  await page
+    .getByRole("button", { name: "Recover draft", exact: true })
+    .click();
+  await expect(
+    page.frameLocator("iframe").locator(".geDiagramContainer"),
+  ).toContainText("Unfinished");
   await page.evaluate(() => document.querySelector("#external-update").click());
-  await page.getByRole("button", { name: "Save diagram", exact: true }).click();
-  await expect(page.getByRole("alertdialog")).toContainText(
-    "Diagram changed in another session",
-  );
-  expect(
-    JSON.parse(await page.locator("#saved").textContent()).nodes,
-  ).toHaveLength(2);
-  const pending = page.waitForEvent("download");
+  await expect(
+    page.getByRole("alertdialog", { name: "Diagram conflict" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save diagram", exact: true }),
+  ).toBeDisabled();
   await page
-    .getByRole("button", { name: "Download my draft", exact: true })
+    .getByRole("button", { name: "Keep my draft", exact: true })
     .click();
-  const download = await pending;
-  const file = testInfo.outputPath("diagram-draft.json");
-  await download.saveAs(file);
-  const { readFileSync } = await import("node:fs");
-  expect(JSON.parse(readFileSync(file, "utf8")).nodes[0].data.label).toBe(
-    "My unfinished draft",
-  );
-  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
-  await expect(page.getByLabel("Shape label")).toHaveValue(
-    "My unfinished draft",
-  );
   await page.getByRole("button", { name: "Save diagram", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Edit diagram", exact: true }),
+  ).toHaveCount(0, { timeout: 30000 });
+  expect(JSON.parse(await page.locator("#saved").textContent()).xml).toContain(
+    "Unfinished",
+  );
+});
+test("native shape text edits update recoverable source before Save", async ({
+  page,
+}) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("http://127.0.0.1:5173/tests/diagram-harness.html");
+  await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
+  await importDrawio(page, "Edit this shape");
+  const editor = page.frameLocator("iframe");
+  await editor
+    .locator(".geDiagramContainer")
+    .getByText("Edit this shape", { exact: true })
+    .dblclick();
+  await editor.locator(".mxCellEditor").fill("Typed in draw.io");
+  await editor
+    .locator(".geDiagramContainer")
+    .click({ position: { x: 20, y: 20 } });
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("thread-diagram-draft:harness")),
+    )
+    .toContain("Typed in draw.io");
+  expect(errors).toEqual([]);
+  await page.getByRole("button", { name: "Save diagram", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Edit diagram", exact: true }),
+  ).toHaveCount(0);
+  expect(JSON.parse(await page.locator("#saved").textContent()).xml).toContain(
+    "Typed in draw.io",
+  );
+});
+test("Save includes text still being edited inside the native iframe", async ({
+  page,
+}) => {
+  await page.goto("http://127.0.0.1:5173/tests/diagram-harness.html");
+  await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
+  await importDrawio(page, "Original text");
+  const editor = page.frameLocator("iframe");
+  await editor
+    .locator(".geDiagramContainer")
+    .getByText("Original text", { exact: true })
+    .dblclick();
+  await editor.locator(".mxCellEditor").fill("Still typing at save");
+  await page.getByRole("button", { name: "Save diagram", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Edit diagram", exact: true }),
+  ).toHaveCount(0);
+  expect(JSON.parse(await page.locator("#saved").textContent()).xml).toContain(
+    "Still typing at save",
+  );
+});
+test("invalid native autosave reports an error without losing the editable canvas", async ({
+  page,
+}) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("http://127.0.0.1:5173/tests/diagram-harness.html");
+  await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
+  await importDrawio(page, "Keep valid draft");
   await page
-    .getByRole("button", { name: "Replace with my diagram", exact: true })
-    .click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  expect(
-    JSON.parse(await page.locator("#saved").textContent()).nodes[0].data.label,
-  ).toBe("My unfinished draft");
+    .frameLocator("iframe")
+    .locator("body")
+    .evaluate(() =>
+      parent.postMessage(
+        JSON.stringify({
+          event: "autosave",
+          xml: "<mxGraphModel><script>bad()</script></mxGraphModel>",
+        }),
+        location.origin,
+      ),
+    );
+  await expect(page.getByRole("alert").first()).toContainText(
+    /Invalid visual document/,
+  );
+  await expect(
+    page.getByRole("button", { name: "Save diagram", exact: true }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
 });

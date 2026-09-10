@@ -13,11 +13,22 @@
     "start": "node server/start.mjs",
     "reset-password": "node server/reset-password.mjs",
     "benchmark": "node scripts/benchmark.mjs",
-    "mcp": "node server/mcp.mjs"
+    "mcp": "node server/mcp.mjs",
+    "setup:drawio": "node scripts/setup-drawio.mjs",
+    "predev": "npm run setup:drawio",
+    "prebuild": "npm run setup:drawio"
   },
   "dependencies": {
-    "@dagrejs/dagre": "^3.1.1",
+    "@drawnix/drawnix": "0.4.0-0",
     "@modelcontextprotocol/server": "^2.0.0",
+    "@plait-board/react-board": "0.4.0-0",
+    "@plait-board/react-text": "0.4.0-0",
+    "@plait/common": "0.89.2",
+    "@plait/core": "0.89.2",
+    "@plait/draw": "0.89.2",
+    "@plait/layouts": "0.89.2",
+    "@plait/mind": "0.89.2",
+    "@plait/text-plugins": "0.89.2",
     "@tiptap/extension-code-block-lowlight": "^3.31.3",
     "@tiptap/extension-image": "^3.31.3",
     "@tiptap/extension-link": "^3.31.3",
@@ -27,7 +38,7 @@
     "@tiptap/markdown": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
-    "@xyflow/react": "^12.11.6",
+    "classnames": "2.5.1",
     "d3-force": "^3.0.0",
     "diff": "^8.0.4",
     "docx": "^9.0.0",
@@ -35,6 +46,8 @@
     "highlight.js": "^11.12.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
+    "laser-pen": "1.0.1",
+    "lodash": "4.18.1",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
@@ -42,9 +55,15 @@
     "react-markdown": "^10.0.0",
     "remark-gfm": "^4.0.0",
     "remark-parse": "^11.0.0",
+    "saxes": "6.0.0",
+    "slate": "0.116.0",
+    "slate-dom": "0.116.0",
+    "slate-history": "0.115.0",
+    "slate-react": "0.116.0",
     "unified": "^11.0.5",
     "yaml": "^2.9.0",
-    "zod": "^4.5.4"
+    "zod": "^4.5.4",
+    "parse5": "8.0.1"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
@@ -57,5 +76,8 @@
   },
   "engines": {
     "node": ">=22.13.0"
+  },
+  "overrides": {
+    "mermaid": "10.9.8"
   }
 }

@@ -1,3 +1,4 @@
+import { MAX_DOCUMENT_CHARACTERS } from "../shared/document-limits.mjs";
 import * as z from "zod/v4";
 
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
@@ -73,7 +74,7 @@ export function registerOkfTools(server, request) {
       bundleId: id,
       path: file,
       baseRevision: revision,
-      body: z.string().max(2000000),
+      body: z.string().max(MAX_DOCUMENT_CHARACTERS),
       metadata,
     }),
     create,
@@ -88,7 +89,7 @@ export function registerOkfTools(server, request) {
         bundleId: id,
         path: file,
         baseRevision: revision,
-        body: z.string().max(2000000).optional(),
+        body: z.string().max(MAX_DOCUMENT_CHARACTERS).optional(),
         metadata: metadata.optional(),
       })
       .refine(

@@ -79,7 +79,7 @@ Agents cannot delete notes, access trash, restore backups, or manage accounts. A
 
 **Knowledge bundles** live alongside ordinary notes and notebooks. Create an empty bundle, copy selected notes, or import a folder/ZIP. Concepts have stable paths, Markdown bodies and preserved YAML metadata. Edit common fields in the metadata panel or use full source; inspect relationships, review status and maintenance diagnostics in the bundle views.
 
-Imports preview files and conflicts before applying changes. Re-import supports keep, update and copy; missing incoming files are retained. Renames update references while preserving note history. Original ZIP export retains authored source and assets; portable ZIP export converts included Thread links and adds diagram images with editable JSON sidecars, reporting unresolved references. Workspace backups also retain bundle mappings and history.
+Imports preview files and conflicts before applying changes. Re-import supports keep, update and copy; missing incoming files are retained. Renames update references while preserving note history. Original ZIP export retains authored source and assets; portable ZIP export converts included Thread links and adds native visual files and saved previews with editable JSON sidecars, reporting unresolved references. Workspace backups also retain bundle mappings and history.
 
 The existing MCP server adds `list_bundles`, `read_bundle_index`, `list_concepts`, `read_concept`, `create_bundle`, `create_concept`, `update_concept` and `validate_bundle`. Writes require revisions. Agents cannot delete bundle content, claim human verification or execute computations. Existing account and agent-key permissions remain in force.
 
@@ -91,11 +91,11 @@ See [the bundle guide](docs/okf-bundles.md) for authoring, review, imports, expo
 - Type **/** for structures and developer/product templates, **@** for note or block references, and **#** for tags. Arrow keys choose suggestions; Enter/Tab inserts; Escape dismisses.
 - Use **Attach files** (the paperclip in the note toolbar) in preview, Markdown, or block mode to upload images and documents. Select multiple files at once; images appear inline and documents become download links at the end of the note. Files are stored in the local workspace's `assets/` directory and included in ZIP backups, with a 20 MB limit per file. No cloud storage is required.
 - Drag a block by its handle to reorder it. Block actions also support move, duplicate, delete, undo, and copying references/live embeds. Paste or drop images/files into the block editor to save local attachments (20 MB each).
-- Choose **Insert visual diagram** in the note toolbar or `/Visual diagram`. **Edit diagram** opens a fullscreen visual canvas built with [React Flow](https://reactflow.dev/). Resize and group shapes, build swimlanes, style and reconnect edges, use automatic layout, link notes, upload images and documents, and save shared templates. The canvas supports multi-selection, copy/paste, draft recovery, and direct SVG/PNG/JSON export. **Save diagram** commits changes; closing prompts before discarding edits.
-- Diagrams are stored as fenced `thread-diagram` JSON blocks in Markdown. They remain editable after reload and backup restoration. This feature does not use Mermaid. Each diagram supports up to 300 shapes and 1,000 connectors. See the [diagram guide](docs/diagrams.md) for tools, shortcuts, local images, portable exports and AI proposals.
-- **Insert mind map** or `/Mind map` opens a tree for rapid idea capture, with child/sibling shortcuts, automatic branches, collapse/expand, links to notes and OKF bundles, and outline import/export. See the [mind map guide](docs/mindmaps.md).
+- Choose **Insert visual diagram** or `/Visual diagram` to open the locally served **draw.io** editor. Native shape libraries, connectors, pages and layers are available fullscreen, alongside Thread references, shared templates and agent proposal review. Save native XML plus a PNG preview; import/export `.drawio`, SVG and PNG. See the [diagram guide](docs/diagrams.md).
+- Diagrams use native draw.io XML inside `thread-diagram` JSON envelopes. First dev/build setup downloads a pinned, checksum-verified editor release; subsequent starts use local assets. No cloud account is required.
+- **Insert mind map** or `/Mind map` opens the native **Drawnix** editor, with visual branch editing, Markdown import, note/OKF references, recovery, and editable `.drawnix`/PNG exports. See the [mind map guide](docs/mindmaps.md).
 - Stable block IDs live in Markdown comments. References use `@[label](block:noteId/blockId)`; live embeds use `![[noteId#blockId]]`. Hover/focus previews show referenced text. Missing and circular embeds are handled explicitly.
-- **Edit Markdown** remains available for the full source. The document-context dock shows headings and incoming/outgoing references, follows the active pane, and can open linked notes beside it.
+- **Edit Markdown** keeps diagrams and mind maps visual by default. Choose **Code edit** for the full note source, or edit a visual block and choose **Code edit** to inspect only that block. The document-context dock shows headings and incoming/outgoing references, follows the active pane, and can open linked notes beside it.
 
 ## Organizing and comparing
 
@@ -124,7 +124,7 @@ Ordinary note edits save to SQLite after a short typing pause, with a visible sa
 The note download menu offers:
 
 - **MD** — original Markdown with title.
-- **Markdown + assets ZIP** — Markdown, local attachments, editable diagram JSON, and PNG previews. Note/block references still require their source workspace notes.
+- **Markdown + assets ZIP** — Markdown, local attachments, native `.drawio`/`.drawnix` files, Thread reference envelopes, and saved PNG previews. References to excluded notes require the source workspace.
 - **DOCX** — editable text, headings, lists, tasks, tables, links, code, and embedded images/diagrams.
 - **PDF** — direct multipage download preserving visual layout. Pages are rasterized, so PDF text is not selectable; external links remain clickable. Use DOCX for editable text.
 
@@ -137,7 +137,7 @@ npm run build
 npm run benchmark
 ```
 
-Browser suites use temporary data directories and isolated ports; they do not reset the real workspace. The standalone durability suite can run with `npx playwright test --config tests/durable.config.js`. Component harnesses use Vite on port 5173.
+Browser suites use temporary data directories and isolated ports; they do not reset the real workspace. The standalone durability suite can run with `npx playwright test --config tests/durable.config.js`. Component harnesses use Vite on port 5173. For Safari mind-map rendering coverage, install WebKit with `npx playwright install webkit`, then run `npx playwright test --config=playwright.webkit.config.js`. Run browser suites sequentially because they share fixture ports.
 
 Tests cover authentication, process-restart persistence, save conflicts, backup validation/rollback, history/trash, rich edits and paste uploads, diagrams, notebooks/layout, reference embeds, property views, graph interactions, comparisons, and export contents. PDF pages were also rendered with Poppler for visual inspection. DOCX structure/media are checked; visual pagination can vary by Word installation.
 

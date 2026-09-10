@@ -9,15 +9,10 @@ afterEach(async () => {
   for (const f of clean.splice(0)) await f();
 });
 const diagram = (label) => ({
-  version: 1,
-  nodes: [
-    {
-      id: "a",
-      position: { x: 0, y: 0 },
-      data: { shape: "process", label, color: "#ffffff" },
-    },
-  ],
-  edges: [],
+  version: 3,
+  engine: "drawio",
+  xml: `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="2" value="${label}" parent="1"/></root></mxGraphModel>`,
+  references: [],
 });
 const fence = (value) =>
   "```thread-diagram\n" + JSON.stringify(value) + "\n```";
@@ -483,4 +478,24 @@ it("never reuses template revisions across newer, older and empty backup restore
       })
     ).status,
   ).toBe(200);
+});
+it("persists a native envelope larger than the old request limit and keeps an explicit document bound", async () => {
+  const { app, request } = await fixture();
+  const value = diagram("large");
+  // A real small PNG plus an ancillary tail exercises transport capacity without changing dimensions.
+  value.preview =
+    "data:image/png;base64," +
+    Buffer.concat([
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=",
+        "base64",
+      ),
+      Buffer.alloc(4_000_000),
+    ]).toString("base64");
+  const response = await request("/notes/large", "PUT", {
+    note: { id: "large", title: "Large", body: fence(value) },
+    baseRevision: 0,
+  });
+  expect(response.status).toBe(200);
+  expect(app.store.getNote("large").body).toContain(value.preview);
 });

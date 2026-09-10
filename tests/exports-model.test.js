@@ -1,3 +1,9 @@
+import { defaultDiagram } from "../src/diagram/model.js";
+const nativeDiagram = () => ({
+  ...defaultDiagram(),
+  preview:
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=",
+});
 import { it, expect } from "vitest";
 import { portableMarkdownFiles } from "../src/export-markdown";
 it("collects only live attachment links and preserves code examples and block IDs", async () => {
@@ -21,7 +27,7 @@ it("collects only live attachment links and preserves code examples and block ID
   expect(body).toContain("thread:block id=b1");
 });
 it("includes diagram source and PNG previews while retaining editable fenced JSON", async () => {
-  const diagram = { version: 1, nodes: [], edges: [] };
+  const diagram = nativeDiagram();
   const files = await portableMarkdownFiles(
     {
       title: "Plan",
@@ -31,7 +37,7 @@ it("includes diagram source and PNG previews while retaining editable fenced JSO
   );
   expect(
     JSON.parse(new TextDecoder().decode(files["diagrams/diagram-1.json"])),
-  ).toEqual({ ...diagram, version: 2 });
+  ).toEqual(diagram);
   expect(files["diagrams/diagram-1.png"]).toEqual(
     new Uint8Array([137, 80, 78, 71]),
   );

@@ -1,1318 +1,628 @@
-import { nodeTypes, edgeTypes } from "./EditorShapes.jsx";
-import { EditorLibrary, LinkInspector, download } from "./EditorLibrary.jsx";
-import {
-  parentFirst,
-  prepareEditorChange,
-  retainMeasurements,
-  recoveryNeedsReview,
-  duplicateSelection,
-  selectedSubgraph,
-  insertDiagram,
-  styleSelection,
-  lockSelection,
-  deleteSelection,
-  groupSelection,
-  ungroupSelection,
-  alignSelection,
-  autoLayout,
-  draftKey,
-  worldPosition,
-} from "./editor-operations.js";
 import React, { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import {
-  ReactFlow,
-  ReactFlowProvider,
-  Background,
-  MiniMap,
-  Controls,
-  Handle,
-  Position,
-  MarkerType,
-  applyNodeChanges,
-  applyEdgeChanges,
-  useReactFlow,
-  useNodesInitialized,
-  getViewportForBounds,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import "./diagram.css";
-import {
-  COLORS,
-  SHAPES,
-  parseDiagram,
-  diagramToSvg,
-  diagramBounds,
-  templateDiagram,
-} from "./model.js";
-export {
-  defaultDiagram,
-  parseDiagram,
-  diagramToSvg,
-  diagramBounds,
-  diagramToPng,
-} from "./model.js";
-let diagramClipboard = null;
-const serial = (d) => JSON.stringify(parseDiagram(d));
+import { parseDiagram } from "./model.js";
+import { drawioUrl, readDrawioMessage } from "./protocol.js";
+import ReferencePanel, { followReference } from "../visual/ReferencePanel.jsx";
+import EditorLibrary from "./EditorLibrary.jsx";
+const stringify = (d) => JSON.stringify(parseDiagram(d));
+function download(value, name, type = "application/xml") {
+  const url = URL.createObjectURL(
+    value instanceof Blob ? value : new Blob([value], { type }),
+  );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 export default function DiagramEditor({
   initial,
-  onSave,
-  onClose,
   context,
   recoveryKey,
+  onSave,
+  onClose,
 }) {
-  const storageKey = recoveryKey
-    ? `thread-diagram-draft:${recoveryKey}`
-    : draftKey(context);
-  const [initialViewport] = useState(() => {
+  const frame = useRef(null),
+    dialog = useRef(null),
+    pending = useRef(new Map()),
+    completed = useRef(false);
+  const [draft, setDraft] = useState(() => parseDiagram(initial)),
+    [baseline, setBaseline] = useState(() => stringify(initial));
+  const [ready, setReady] = useState(false),
+    [saving, setSaving] = useState(false),
+    [error, setError] = useState(""),
+    [panel, setPanel] = useState(false),
+    [discard, setDiscard] = useState(false),
+    [imported, setImported] = useState(null),
+    [review, setReview] = useState(null);
+  const key = recoveryKey ? `thread-diagram-draft:${recoveryKey}` : null;
+  const [recovery, setRecovery] = useState(() => {
     try {
-      const value =
-        storageKey &&
-        JSON.parse(localStorage.getItem(`${storageKey}:viewport`));
-      return value &&
-        Number.isFinite(value.x) &&
-        Number.isFinite(value.y) &&
-        Number.isFinite(value.zoom) &&
-        value.zoom >= 0.15 &&
-        value.zoom <= 3
-        ? value
+      const stored = key && localStorage.getItem(key);
+      if (!stored) return null;
+      const record = JSON.parse(stored),
+        data = parseDiagram(record.diagram);
+      return stringify(data) !== stringify(initial) ||
+        context?.retainRecoveryOnSave
+        ? { ...record, diagram: data }
         : null;
     } catch {
       return null;
     }
   });
-  const viewportReady = useRef(false),
-    initializingViewport = useRef(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [canvasReady, setCanvasReady] = useState(false);
-  const completedSave = useRef(null);
-  const nodesInitialized = useNodesInitialized();
-  const [recovery, setRecovery] = useState(() => {
-    try {
-      const raw = storageKey && localStorage.getItem(storageKey);
-      if (!raw || raw.length > 1200000) return null;
-      const d = JSON.parse(raw);
-      if (!recoveryNeedsReview(d, initial, !!context?.retainRecoveryOnSave)) {
-        localStorage.removeItem(storageKey);
-        return null;
-      }
-      return { ...d, diagram: parseDiagram(d.diagram) };
-    } catch {
-      return null;
-    }
-  });
-  const [pendingUploads, setPendingUploads] = useState(0);
-  const [snap, setSnap] = useState(true),
-    [search, setSearch] = useState(""),
-    [palette, setPalette] = useState(() => window.innerWidth > 700),
-    [inspector, setInspector] = useState(() => window.innerWidth > 700),
-    [menu, setMenu] = useState(null),
-    [guides, setGuides] = useState([]);
-  const clipboard = useRef(diagramClipboard),
-    typing = useRef(null),
-    viewport = useRef(null);
-  const [draft, setDraftState] = useState(initial),
-    [past, setPast] = useState([]),
-    [future, setFuture] = useState([]),
-    [discard, setDiscard] = useState(false),
-    [conflict, setConflict] = useState(false),
-    [error, setError] = useState(""),
-    [from, setFrom] = useState(""),
-    [to, setTo] = useState("");
-  const latestDraft = useRef(draft);
-  const setDraft = (update) => {
-    try {
-      const next = retainMeasurements(
-        latestDraft.current,
-        typeof update === "function" ? update(latestDraft.current) : update,
-      );
-      parseDiagram(next);
-      latestDraft.current = next;
-      setDraftState(next);
-    } catch (e) {
-      setError(e.message);
-    }
+  const state = useRef();
+  state.current = {
+    draft,
+    baseline,
+    initial,
+    context,
+    onSave,
+    onClose,
+    recovery,
+    discard,
+    imported,
+    review,
+    saving,
   };
-  const dialog = useRef(null),
-    dragStart = useRef(null),
-    flow = useReactFlow();
-  const baseline = useRef(serial(initial));
-  const selected = draft.nodes.find((n) => n.selected),
-    selectedEdge = draft.edges.find((e) => e.selected);
-  const dirty = serial(draft) !== baseline.current;
-  useEffect(() => {
-    dialog.current.showModal();
-    setModalOpen(true);
-  }, []);
-  useEffect(() => {
+  const dirty = stringify(draft) !== baseline;
+  const conflict = stringify(initial) !== baseline;
+  const blocked =
+    saving || !!recovery || discard || !!imported || conflict || !!review;
+  const post = (data) =>
+    frame.current?.contentWindow?.postMessage(
+      JSON.stringify(data),
+      location.origin,
+    );
+  const change = (next) => setDraft(parseDiagram(next));
+  const load = (data) => {
+    change(data);
+    post({
+      action: "load",
+      xml: data.xml,
+      autosave: 1,
+      title: "Thread diagram",
+    });
+  };
+  const persist = () => {
+    const s = state.current;
     if (
-      !modalOpen ||
-      initializingViewport.current ||
-      viewportReady.current ||
-      (draft.nodes.length && !nodesInitialized)
+      !key ||
+      completed.current ||
+      s.recovery ||
+      s.review ||
+      stringify(s.draft) === s.baseline
     )
       return;
-    const canvas = dialog.current?.querySelector(".diagram-canvas");
-    if (!canvas?.clientWidth || !canvas?.clientHeight) return;
-    let cancelled = false;
-    const frame = requestAnimationFrame(async () => {
-      if (cancelled) return;
-      initializingViewport.current = true;
-      try {
-        if (initialViewport) await flow.setViewport(initialViewport);
-        else if (latestDraft.current.nodes.length)
-          await flow.fitView({ padding: 0.2 });
-        else await flow.setViewport({ x: 0, y: 0, zoom: 1 });
-        if (cancelled) return;
-        viewport.current = flow.getViewport();
-        viewportReady.current = true;
-        setCanvasReady(true);
-      } finally {
-        initializingViewport.current = false;
-      }
-    });
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(frame);
-    };
-  }, [modalOpen, nodesInitialized, initialViewport, flow, draft.nodes.length]);
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify({ baseline: s.baseline, diagram: s.draft }),
+      );
+    } catch {
+      setError(
+        "Browser draft storage is full. Save the diagram to keep your changes.",
+      );
+    }
+  };
   useEffect(() => {
-    const warn = (e) => {
-      if (
-        (dirty || pendingUploads) &&
-        completedSave.current !== serial(latestDraft.current)
-      ) {
-        try {
-          if (storageKey && !recovery)
-            localStorage.setItem(
-              storageKey,
-              JSON.stringify({
-                baseline: baseline.current,
-                diagram: parseDiagram(draft),
-                viewport: viewport.current,
-              }),
-            );
-        } catch {}
+    dialog.current.showModal();
+    return () => {
+      for (const request of pending.current.values()) {
+        clearTimeout(request.timer);
+        request.reject(new Error("Editor closed."));
+      }
+      pending.current.clear();
+    };
+  }, []);
+  useEffect(() => {
+    const timer = setTimeout(persist, 250);
+    const unload = (e) => {
+      persist();
+      if (stringify(state.current.draft) !== state.current.baseline) {
         e.preventDefault();
         e.returnValue = "";
       }
     };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty, draft, storageKey, recovery, pendingUploads]);
-  useEffect(() => {
-    if (!storageKey || recovery || !dirty) return;
-    const timer = setTimeout(() => {
-      if (completedSave.current === serial(latestDraft.current)) return;
-      try {
-        const value = JSON.stringify({
-          baseline: baseline.current,
-          diagram: parseDiagram(draft),
-          viewport: viewport.current,
-        });
-        if (value.length > 1200000)
-          throw Error("Draft is too large for recovery storage");
-        localStorage.setItem(storageKey, value);
-      } catch (e) {
-        setError(`Draft recovery unavailable: ${e.message}`);
+    window.addEventListener("beforeunload", unload);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("beforeunload", unload);
+    };
+  }, [draft, baseline, recovery, review]);
+  useEffect(() => () => persist(), []);
+  const requestExport = (format) =>
+    new Promise((resolve, reject) => {
+      // draw.io commits cell text on F2. Clicking the parent toolbar does not
+      // commit the iframe's active contenteditable, so finish it before export.
+      const cellEditor =
+        frame.current?.contentDocument?.querySelector(".mxCellEditor");
+      if (cellEditor?.isContentEditable) {
+        const EditorKeyboardEvent = frame.current.contentWindow.KeyboardEvent;
+        cellEditor.dispatchEvent(
+          new EditorKeyboardEvent("keydown", {
+            key: "F2",
+            code: "F2",
+            keyCode: 113,
+            which: 113,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
       }
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [draft, dirty, recovery, storageKey]);
-  const clearRecovery = () => {
+      const requestId = crypto.randomUUID();
+      const timer = setTimeout(() => {
+        pending.current.delete(requestId);
+        reject(
+          new Error(
+            "The editor did not finish exporting. Your draft is retained; try again.",
+          ),
+        );
+      }, 25000);
+      pending.current.set(requestId, { resolve, reject, timer });
+      post({
+        action: "export",
+        format,
+        requestId,
+        background: "#ffffff",
+        scale: 1,
+        border: 16,
+      });
+    });
+  const save = async () => {
+    const s = state.current;
+    if (
+      !ready ||
+      s.saving ||
+      s.recovery ||
+      s.discard ||
+      s.imported ||
+      s.review ||
+      stringify(s.initial) !== s.baseline
+    )
+      return;
+    setSaving(true);
+    setError("");
     try {
-      if (storageKey) localStorage.removeItem(storageKey);
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-  const change = (next, transaction) => {
-    try {
-      const prepared = prepareEditorChange(latestDraft.current, next);
-      next = prepared.diagram;
-      if (!transaction || typing.current !== transaction)
-        setPast((p) => [...p.slice(-79), prepared.before]);
-      typing.current = transaction || null;
-      setFuture([]);
+      const result = await requestExport("png");
+      const next = parseDiagram({
+        ...state.current.draft,
+        xml: result.xml,
+        preview: result.data,
+      });
       setDraft(next);
-      setError("");
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-  const fitDocument = async (next) => {
-    setCanvasReady(false);
-    try {
-      const canvas = dialog.current.querySelector(".diagram-canvas");
-      const { width, height } = canvas.getBoundingClientRect();
-      if (!width || !height)
-        throw Error("The diagram canvas is not ready to fit.");
-      const target = getViewportForBounds(
-        diagramBounds(parseDiagram(next)),
-        width,
-        height,
-        0.15,
-        3,
-        0.25,
-      );
-      await flow.setViewport(target, { duration: 0 });
-      viewport.current = target;
+      // Retain the exported source if persistence fails.
+      if (key) {
+        try {
+          localStorage.setItem(
+            key,
+            JSON.stringify({ baseline: s.baseline, diagram: next }),
+          );
+        } catch {
+          /* Disk save remains available when browser storage is full. */
+        }
+      }
+      await state.current.onSave(JSON.stringify(next));
+      completed.current = true;
+      if (key && !state.current.context?.retainRecoveryOnSave)
+        localStorage.removeItem(key);
     } catch (e) {
       setError(e.message);
     } finally {
-      setCanvasReady(true);
+      setSaving(false);
     }
   };
-  const undo = () => {
-    if (!past.length) return;
-    typing.current = null;
-    setFuture((f) => [serial(draft), ...f]);
-    setDraft(parseDiagram(past.at(-1)));
-    setPast((p) => p.slice(0, -1));
-  };
-  const redo = () => {
-    if (!future.length) return;
-    typing.current = null;
-    setPast((p) => [...p, serial(draft)]);
-    setDraft(parseDiagram(future[0]));
-    setFuture((f) => f.slice(1));
-  };
+  const saveRef = useRef(save);
+  saveRef.current = save;
   const close = () => {
-    if (pendingUploads) {
-      setError("Wait for the asset upload to finish before closing.");
-      return;
+    if (state.current.saving) return;
+    if (dirty || review) setDiscard(true);
+    else {
+      completed.current = true;
+      onClose();
     }
-    conflict ? setConflict(false) : dirty ? setDiscard(true) : onClose();
   };
-  const save = async (replace = false) => {
-    if (recovery || discard || (conflict && !replace)) return;
-    if (pendingUploads) {
-      setError("Wait for the asset upload to finish before saving.");
-      return;
-    }
-    if (!replace && serial(initial) !== baseline.current) {
-      setConflict(true);
-      return;
-    }
-    try {
-      if (context?.retainRecoveryOnSave && storageKey) {
-        const recovery = JSON.stringify({
-          baseline: baseline.current,
-          diagram: parseDiagram(draft),
-          viewport: viewport.current,
-        });
-        if (recovery.length > 1200000)
-          throw Error("Draft is too large for recovery storage");
-        localStorage.setItem(storageKey, recovery);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    const timeout = setTimeout(
+      () =>
+        setError(
+          "The local diagram editor is taking longer than expected to load. Check that npm run setup:drawio completed.",
+        ),
+      20000,
+    );
+    const message = async (event) => {
+      const data = readDrawioMessage(
+        event,
+        frame.current?.contentWindow,
+        location.origin,
+      );
+      if (!data) return;
+      try {
+        if (data.event === "configure")
+          post({
+            action: "configure",
+            config: {
+              compressXml: false,
+              defaultLibraries: "general;basic;arrows2;flowchart",
+              suppressNewWindows: true,
+              enableCustomLibraries: false,
+            },
+          });
+        else if (data.event === "init") {
+          clearTimeout(timeout);
+          setError("");
+          post({
+            action: "load",
+            xml: state.current.draft.xml,
+            autosave: 1,
+            title: "Thread diagram",
+          });
+        } else if (data.event === "load") setReady(true);
+        else if (
+          data.event === "autosave" &&
+          typeof data.xml === "string" &&
+          !state.current.recovery &&
+          !state.current.review
+        ) {
+          const { preview, ...source } = state.current.draft;
+          setDraft(parseDiagram({ ...source, xml: data.xml }));
+        } else if (data.event === "save") saveRef.current();
+        else if (data.event === "exit") closeRef.current();
+        else if (data.event === "export") {
+          const source =
+            typeof data.message === "string"
+              ? JSON.parse(data.message)
+              : data.message;
+          const request = pending.current.get(source?.requestId);
+          if (request) {
+            clearTimeout(request.timer);
+            pending.current.delete(source.requestId);
+            data.error
+              ? request.reject(new Error(data.error))
+              : request.resolve(data);
+          }
+        } else if (data.event === "openLink" && typeof data.href === "string") {
+          const ref = state.current.draft.references.find(
+            (r) => data.href === `thread:${r.id}`,
+          );
+          if (ref) {
+            const s = state.current;
+            if (
+              stringify(s.draft) !== s.baseline ||
+              s.saving ||
+              s.recovery ||
+              s.review
+            ) {
+              setError(
+                "Save or close this diagram before opening a reference.",
+              );
+              return;
+            }
+            completed.current = true;
+            s.onClose();
+            followReference(ref.link, s.context);
+          } else if (/^https?:\/\//i.test(data.href))
+            window.open(data.href, "_blank", "noopener,noreferrer");
+        } else if (data.event === "error")
+          setError(data.message || "The diagram editor reported an error.");
+      } catch (e) {
+        setError(e.message);
       }
-      const saved = serial(latestDraft.current);
-      await onSave(saved);
-      if (!context?.retainRecoveryOnSave) {
-        completedSave.current = saved;
-        clearRecovery();
+    };
+    window.addEventListener("message", message);
+    return () => {
+      clearTimeout(timeout);
+      window.removeEventListener("message", message);
+    };
+  }, []);
+  const exportFile = async (format) => {
+    setSaving(true);
+    setError("");
+    try {
+      const data = await requestExport(format);
+      if (format === "xml") download(data.xml, "diagram.drawio");
+      else {
+        const response = await fetch(data.data);
+        download(await response.blob(), `diagram.${format}`);
       }
     } catch (e) {
       setError(e.message);
+    } finally {
+      setSaving(false);
     }
   };
-  const downloadDraft = () => {
-    const url = URL.createObjectURL(
-      new Blob([serial(draft)], { type: "application/json" }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "diagram-draft.json";
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-  const addShape = (shape, position) => {
-    const p =
-      position ||
-      flow.screenToFlowPosition({
-        x: window.innerWidth / 2 + (draft.nodes.length % 3) * 35,
-        y: window.innerHeight / 2 + (draft.nodes.length % 3) * 35,
-      });
-    const id = crypto.randomUUID();
-    change({
-      ...draft,
-      nodes: [
-        ...draft.nodes.map((n) => ({ ...n, selected: false })),
-        {
-          id,
-          type: "diagramShape",
-          position: p,
-          selected: true,
-          data: {
-            shape,
-            label:
-              shape === "text"
-                ? "Add text"
-                : shape[0].toUpperCase() + shape.slice(1),
-            color: COLORS[0],
-          },
-        },
-      ],
-    });
-  };
-  const connect = (c) => {
-    if (!c.source || !c.target) return;
-    change({
-      ...draft,
-      edges: [
-        ...draft.edges,
-        {
-          id: crypto.randomUUID(),
-          source: c.source,
-          target: c.target,
-          sourceHandle: c.sourceHandle || "out-bottom",
-          targetHandle: c.targetHandle || "in-top",
-          label: "",
-        },
-      ],
-    });
-  };
-  const remove = () => change(deleteSelection(draft));
-  const updateNode = (data) =>
-    change(
-      styleSelection(draft, data),
-      Object.keys(data).length === 1
-        ? `${selected?.id}:${Object.keys(data)[0]}`
-        : undefined,
-    );
-  const updateEdge = (data) =>
-    change({
-      ...draft,
-      edges: draft.edges.map((e) => (e.selected ? { ...e, ...data } : e)),
-    });
-  const openLink = (link) => {
-    if (pendingUploads) {
-      setError(
-        "Wait for the asset upload to finish before opening a linked target.",
+  const importFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      if (file.size > 8_000_000)
+        throw new Error("Keep diagram imports below 8 MB.");
+      const text = await file.text();
+      setImported(
+        parseDiagram(
+          text.trim().startsWith("{")
+            ? JSON.parse(text)
+            : { version: 3, engine: "drawio", xml: text, references: [] },
+        ),
       );
-      return;
-    }
-    if (dirty) {
-      setError("Save or discard your changes before opening a linked target.");
-      return;
-    }
-    if (["note", "block", "concept"].includes(link.kind)) {
-      if (!context?.onOpenNote) {
-        setError("Note navigation is unavailable here.");
-        return;
-      }
-      onClose();
-      context.onOpenNote(link.noteId, link.blockId);
-    } else
-      window.open(
-        context?.resolveAssetUrl?.(link.url) || link.url,
-        "_blank",
-        "noopener,noreferrer",
-      );
-  };
-  const fitSelection = () =>
-    flow.fitView({
-      nodes: draft.nodes.filter((n) => n.selected),
-      padding: 0.3,
-    });
-  const onKeys = (e) => {
-    if (recovery || discard || conflict) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s")
-        e.preventDefault();
-      return;
-    }
-    if (e.key === "Escape") return;
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-      e.preventDefault();
-      save();
-      return;
-    }
-    if (e.target.closest("input,textarea,select")) return;
-    if (e.metaKey || e.ctrlKey) {
-      const key = e.key.toLowerCase();
-      if (["a", "c", "v", "d", "g"].includes(key)) {
-        e.preventDefault();
-        if (key === "a")
-          setDraft({
-            ...draft,
-            nodes: draft.nodes.map((n) => ({ ...n, selected: true })),
-          });
-        if (key === "c")
-          diagramClipboard = clipboard.current = selectedSubgraph(draft);
-        if (key === "v" && clipboard.current)
-          change(insertDiagram(draft, clipboard.current));
-        if (key === "d") change(duplicateSelection(draft));
-        if (key === "g")
-          change(e.shiftKey ? ungroupSelection(draft) : groupSelection(draft));
-        return;
-      }
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
-      e.preventDefault();
-      e.shiftKey ? redo() : undo();
-    }
-    if (
-      (e.key === "Delete" || e.key === "Backspace") &&
-      (selected || selectedEdge)
-    ) {
-      e.preventDefault();
-      remove();
+    } catch (error) {
+      setError(error.message);
     }
   };
   return (
     <dialog
       ref={dialog}
-      className="diagram-dialog"
+      className="diagram-dialog native-diagram-dialog"
       aria-label="Edit diagram"
       onCancel={(e) => {
         e.preventDefault();
         close();
       }}
-      onKeyDown={onKeys}
-      onBlurCapture={() => {
-        typing.current = null;
+      onKeyDown={(e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+          e.preventDefault();
+          save();
+        }
       }}
     >
-      <header
-        className="diagram-header"
-        inert={discard || conflict || !!recovery}
-      >
+      <header className="native-editor-header">
         <div>
           <strong>Diagram</strong>
-          <span>
-            {draft.nodes.length} shapes · {draft.edges.length} connectors
-            {dirty ? " · Unsaved changes" : ""}
-          </span>
+          <small>draw.io · {dirty ? "Unsaved changes" : "Saved source"}</small>
         </div>
-        <div className="diagram-actions">
-          <button aria-pressed={palette} onClick={() => setPalette((v) => !v)}>
-            Shapes panel
-          </button>
-          <button
-            aria-pressed={inspector}
-            onClick={() => setInspector((v) => !v)}
-          >
-            Inspector panel
-          </button>
-          <button onClick={undo} disabled={!past.length}>
-            Undo
-          </button>
-          <button onClick={redo} disabled={!future.length}>
-            Redo
-          </button>
-          <button
-            onClick={close}
-            aria-label="Close diagram"
-            disabled={!!pendingUploads}
-          >
-            Close
-          </button>
-          <button
-            className="diagram-save"
-            onClick={() => save()}
-            disabled={!!pendingUploads}
-          >
-            Save diagram
-          </button>
-        </div>
+        <button onClick={() => setPanel(!panel)} aria-expanded={panel}>
+          References and library
+        </button>
+        <button disabled={!ready || blocked} onClick={save}>
+          Save diagram
+        </button>
+        <button disabled={saving} onClick={close}>
+          Close
+        </button>
       </header>
-      <div
-        style={{
-          gridTemplateColumns: `${palette ? "190px" : "0px"} minmax(0,1fr) ${inspector ? "210px" : "0px"}`,
-        }}
-        className="diagram-workspace"
-        inert={discard || conflict || !!recovery}
-      >
-        <aside hidden={!palette} className="diagram-palette">
-          <h3>Shapes</h3>
-          <p>Drag onto the canvas, or click to add.</p>
-          {SHAPES.map((shape) => (
-            <button
-              key={shape}
-              aria-label={`Add ${shape}`}
-              disabled={!canvasReady}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData("application/thread-shape", shape);
-                e.dataTransfer.effectAllowed = "copy";
-              }}
-              onClick={() => addShape(shape)}
-            >
-              <span aria-hidden="true">
-                {
-                  { process: "▭", decision: "◇", database: "▤", text: "T" }[
-                    shape
-                  ]
-                }
-              </span>
-              {shape[0].toUpperCase() + shape.slice(1)}
-            </button>
-          ))}
-          <h3>Start with a template</h3>
-          <select
-            aria-label="Diagram template"
-            disabled={!canvasReady}
-            value=""
-            onChange={(e) => {
-              if (!e.target.value) return;
-              let next;
-              if (e.target.value === "blank") {
-                if (
-                  draft.nodes.length &&
-                  !window.confirm("Clear this canvas? Undo restores your work.")
-                )
-                  return;
-                next = templateDiagram("blank");
-              } else {
-                const template = parseDiagram(templateDiagram(e.target.value));
-                next = draft.nodes.length
-                  ? insertDiagram(draft, template)
-                  : template;
-              }
-              change(next);
-              fitDocument(next);
-            }}
-          >
-            <option value="">Choose a template…</option>
-            <option value="flow">Simple flow</option>
-            <option value="decision">Decision</option>
-            <option value="data">Data pipeline</option>
-            <option value="architecture">Architecture</option>
-            <option value="approval">Approval</option>
-            <option value="knowledge">Knowledge map</option>
-            <option value="swimlane">Swimlane</option>
-            <option value="blank">Blank canvas</option>
-          </select>
-          <p>
-            Templates insert into your canvas. Blank canvas asks before
-            clearing.
-          </p>
-          <h3>Connect shapes</h3>
-          <label>
-            Connect from
-            <select
-              aria-label="Connect from"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            >
-              <option value="">Choose shape…</option>
-              {draft.nodes.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.data.label || "Untitled shape"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Connect to
-            <select
-              aria-label="Connect to"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            >
-              <option value="">Choose shape…</option>
-              {draft.nodes.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.data.label || "Untitled shape"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            disabled={
-              !draft.nodes.some((n) => n.id === from) ||
-              !draft.nodes.some((n) => n.id === to)
-            }
-            onClick={() => connect({ source: from, target: to })}
-          >
-            Add connector
-          </button>
-          <p>Drag between dots on any side.</p>
-          <EditorLibrary
-            draft={draft}
-            change={change}
-            context={context}
-            setError={setError}
-            dirty={dirty}
-            pendingUploads={pendingUploads}
-            onUploadPending={(delta) =>
-              setPendingUploads((v) => Math.max(0, v + delta))
-            }
-            onClose={close}
-          />
-          <h3>Arrange</h3>
-          <button
-            onClick={() => change(duplicateSelection(draft))}
-            disabled={!selected}
-          >
-            Duplicate selected
-          </button>
-          <button
-            onClick={() => {
-              diagramClipboard = clipboard.current = selectedSubgraph(draft);
-            }}
-            disabled={!selected}
-          >
-            Copy selected
-          </button>
-          <button
-            onClick={() => {
-              if (clipboard.current)
-                change(insertDiagram(draft, clipboard.current));
-            }}
-          >
-            Paste shapes
-          </button>
-          <button
-            onClick={() => change(groupSelection(draft))}
-            disabled={!selected}
-          >
-            Group selected
-          </button>
-          <button
-            onClick={() => change(ungroupSelection(draft))}
-            disabled={!selected}
-          >
-            Ungroup selected
-          </button>
-          <button
-            onClick={() => change(lockSelection(draft, !selected?.locked))}
-            disabled={!selected}
-          >
-            {selected?.locked ? "Unlock selected" : "Lock selected"}
-          </button>
-          <select
-            aria-label="Align selected"
-            value=""
-            onChange={(e) => change(alignSelection(draft, e.target.value))}
-          >
-            <option value="">Align / distribute…</option>
-            {[
-              "left",
-              "center",
-              "right",
-              "top",
-              "middle",
-              "bottom",
-              "horizontal",
-              "vertical",
-            ].map((v) => (
-              <option key={v}>{v}</option>
-            ))}
-          </select>
-          <button onClick={() => change(autoLayout(draft, "TB"))}>
-            Layout top down
-          </button>
-          <button onClick={() => change(autoLayout(draft, "LR"))}>
-            Layout left to right
-          </button>
-          <label>
-            <input
-              type="checkbox"
-              checked={snap}
-              onChange={(e) => setSnap(e.target.checked)}
-            />{" "}
-            Snap to grid
-          </label>
-        </aside>
-        <div
-          className="diagram-canvas"
-          inert={!canvasReady}
-          aria-busy={!canvasReady}
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "copy";
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            const shape = e.dataTransfer.getData("application/thread-shape");
-            if (SHAPES.includes(shape))
-              addShape(
-                shape,
-                flow.screenToFlowPosition({
-                  x: e.clientX - 90,
-                  y: e.clientY - 45,
-                }),
-              );
-          }}
-        >
-          <div className="diagram-navigation">
-            <input
-              aria-label="Search shapes"
-              placeholder="Find a shape…"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                if (e.target.value) {
-                  const matches = draft.nodes.filter((n) =>
-                    n.data.label
-                      .toLowerCase()
-                      .includes(e.target.value.toLowerCase()),
-                  );
-                  if (matches.length)
-                    flow.fitView({ nodes: matches, padding: 0.3 });
-                }
-              }}
-            />
-            <button onClick={fitSelection}>Zoom to selection</button>
-          </div>
-          <ReactFlow
-            nodes={parentFirst(draft.nodes).map((n) => ({
-              ...n,
-              draggable: !n.locked,
-              connectable: !n.locked,
-              data: {
-                ...n.data,
-                image: n.data.image
-                  ? {
-                      ...n.data.image,
-                      url:
-                        context?.resolveAssetUrl?.(n.data.image.url) ||
-                        n.data.image.url,
-                    }
-                  : undefined,
-                _locked: n.locked,
-                _update: (data) =>
-                  change({
-                    ...draft,
-                    nodes: draft.nodes.map((v) =>
-                      v.id === n.id
-                        ? { ...v, data: { ...v.data, ...data } }
-                        : v,
-                    ),
-                  }),
-                _open: openLink,
-              },
-            }))}
-            edges={draft.edges.map((e) => ({
-              ...e,
-              type: "diagramEdge",
-              data: { edge: e, nodes: draft.nodes },
-            }))}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            snapToGrid={snap}
-            snapGrid={[20, 20]}
-            onMoveEnd={(_, v) => {
-              if (!viewportReady.current) return;
-              viewport.current = v;
-              try {
-                if (storageKey)
-                  localStorage.setItem(
-                    `${storageKey}:viewport`,
-                    JSON.stringify(v),
-                  );
-              } catch {}
-            }}
-            onPaneContextMenu={(e) => {
-              e.preventDefault();
-              setMenu({ x: e.clientX, y: e.clientY });
-            }}
-            onNodeContextMenu={(e, n) => {
-              e.preventDefault();
-              setDraft({
-                ...draft,
-                nodes: draft.nodes.map((v) => ({
-                  ...v,
-                  selected: v.id === n.id || v.selected,
-                })),
-              });
-              setMenu({ x: e.clientX, y: e.clientY });
-            }}
-            onPaneClick={() => setMenu(null)}
-            onReconnect={(old, c) =>
-              change({
-                ...draft,
-                edges: draft.edges.map((e) =>
-                  e.id === old.id ? { ...e, ...c } : e,
-                ),
-              })
-            }
-            onNodesChange={(changes) => {
-              try {
-                const draft = latestDraft.current;
-                const next = {
-                  ...draft,
-                  nodes: applyNodeChanges(
-                    changes.filter(
-                      (c) =>
-                        !draft.nodes.find((n) => n.id === c.id)?.locked ||
-                        c.type === "select" ||
-                        c.type === "dimensions",
-                    ),
-                    draft.nodes,
-                  ),
-                };
-                parseDiagram(next);
-                const resizing = changes.some(
-                  (c) => c.type === "dimensions" && c.resizing,
-                );
-                if (resizing && !dragStart.current)
-                  dragStart.current = serial(latestDraft.current);
-                if (
-                  changes.some(
-                    (c) => c.type === "dimensions" && c.resizing === false,
-                  ) &&
-                  dragStart.current
-                ) {
-                  const snapshot = dragStart.current;
-                  setPast((p) => [...p.slice(-79), snapshot]);
-                  setFuture([]);
-                  dragStart.current = null;
-                }
-                if (
-                  changes.some((c) => c.type === "position" && !c.dragging) &&
-                  !dragStart.current
-                )
-                  change(next);
-                else
-                  setDraft((current) => ({
-                    ...current,
-                    nodes: applyNodeChanges(
-                      changes.filter(
-                        (c) =>
-                          !current.nodes.find((n) => n.id === c.id)?.locked ||
-                          c.type === "select" ||
-                          c.type === "dimensions",
-                      ),
-                      current.nodes,
-                    ),
-                  }));
-              } catch (e) {
-                setError(e.message);
-              }
-            }}
-            onEdgesChange={(changes) =>
-              setDraft((current) => ({
-                ...current,
-                edges: applyEdgeChanges(changes, current.edges),
-              }))
-            }
-            onNodeDrag={(_, node) => {
-              const p = worldPosition(node, draft.nodes);
-              setGuides(
-                draft.nodes
-                  .filter((n) => n.id !== node.id)
-                  .flatMap((n) => {
-                    const q = worldPosition(n, draft.nodes);
-                    return [
-                      ...(Math.abs(p.x - q.x) < 6
-                        ? [{ axis: "x", value: q.x }]
-                        : []),
-                      ...(Math.abs(p.y - q.y) < 6
-                        ? [{ axis: "y", value: q.y }]
-                        : []),
-                    ];
-                  }),
-              );
-            }}
-            onNodeDragStart={() => {
-              typing.current = null;
-              dragStart.current = serial(latestDraft.current);
-            }}
-            onNodeDragStop={() => {
-              if (
-                dragStart.current &&
-                dragStart.current !== serial(latestDraft.current)
-              ) {
-                const snapshot = dragStart.current;
-                setPast((p) => [...p.slice(-79), snapshot]);
-                setFuture([]);
-              }
-              dragStart.current = null;
-              setGuides([]);
-            }}
-            onConnect={connect}
-            deleteKeyCode={null}
-            minZoom={0.15}
-            maxZoom={3}
-            defaultEdgeOptions={{ type: "default" }}
-          >
-            <Background color="#c5cbd5" gap={20} />
-            <MiniMap pannable zoomable nodeColor={(n) => n.data.color} />
-            {guides.map((g, i) => {
-              const p = flow.flowToScreenPosition({ x: g.value, y: g.value });
-              const bounds = dialog.current
-                ?.querySelector(".diagram-canvas")
-                ?.getBoundingClientRect();
-              return (
-                <div
-                  key={i}
-                  className={`diagram-guide diagram-guide-${g.axis}`}
-                  style={
-                    g.axis === "x"
-                      ? { left: p.x - (bounds?.left || 0) }
-                      : { top: p.y - (bounds?.top || 0) }
-                  }
-                />
-              );
-            })}
-            <Controls showInteractive={false} />
-          </ReactFlow>
-        </div>
-        <aside hidden={!inspector} className="diagram-inspector">
-          <h3>
-            {selected ? "Shape" : selectedEdge ? "Connector" : "Inspector"}
-          </h3>
-          {selected ? (
-            <>
-              <label>
-                Shape label
-                <textarea
-                  aria-label="Shape label"
-                  value={selected.data.label}
-                  maxLength={500}
-                  onChange={(e) => updateNode({ label: e.target.value })}
-                />
-              </label>
-              <label>
-                Shape type
-                <select
-                  value={selected.data.shape}
-                  onChange={(e) => updateNode({ shape: e.target.value })}
-                >
-                  {SHAPES.map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Shape color
-                <input
-                  aria-label="Shape color"
-                  type="color"
-                  value={selected.data.color}
-                  onChange={(e) => updateNode({ color: e.target.value })}
-                />
-              </label>
-              <label>
-                Font size
-                <input
-                  aria-label="Font size"
-                  type="number"
-                  min="8"
-                  max="72"
-                  value={selected.data.fontSize || 13}
-                  onChange={(e) =>
-                    updateNode({ fontSize: Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label>
-                Text color
-                <input
-                  type="color"
-                  value={selected.data.textColor || "#202b40"}
-                  onChange={(e) => updateNode({ textColor: e.target.value })}
-                />
-              </label>
-              <label>
-                Text weight
-                <select
-                  value={selected.data.fontWeight || 400}
-                  onChange={(e) =>
-                    updateNode({ fontWeight: Number(e.target.value) })
-                  }
-                >
-                  <option value="400">Regular</option>
-                  <option value="700">Bold</option>
-                </select>
-              </label>
-              <label>
-                Text align
-                <select
-                  value={selected.data.textAlign || "center"}
-                  onChange={(e) => updateNode({ textAlign: e.target.value })}
-                >
-                  {["left", "center", "right"].map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
-              </label>
-              {["width", "height"].map((axis) => (
-                <label key={axis}>
-                  {axis}
-                  <input
-                    aria-label={`Shape ${axis}`}
-                    type="number"
-                    min="40"
-                    max="4000"
-                    value={selected[axis] || (axis === "width" ? 180 : 90)}
-                    onChange={(e) =>
-                      change(
-                        {
-                          ...draft,
-                          nodes: draft.nodes.map((n) =>
-                            n.selected && !n.locked
-                              ? { ...n, [axis]: Number(e.target.value) }
-                              : n,
-                          ),
-                        },
-                        `${selected.id}:${axis}`,
-                      )
-                    }
-                  />
-                </label>
-              ))}
-              <button
-                onClick={() =>
-                  change({
-                    ...draft,
-                    nodes: draft.nodes.map((n) =>
-                      n.selected && !n.locked
-                        ? {
-                            ...n,
-                            width: Math.min(
-                              1200,
-                              Math.max(
-                                180,
-                                Math.sqrt(n.data.label.length) *
-                                  (n.data.fontSize || 13) *
-                                  3,
-                              ),
-                            ),
-                            height: Math.min(
-                              1200,
-                              Math.max(
-                                90,
-                                Math.ceil(n.data.label.length / 30) *
-                                  (n.data.fontSize || 13) *
-                                  1.5 +
-                                  40,
-                              ),
-                            ),
-                          }
-                        : n,
-                    ),
-                  })
-                }
-              >
-                Fit to text
-              </button>
-              <LinkInspector
-                selected={selected}
-                updateNode={updateNode}
-                context={context}
-                openLink={openLink}
-              />
-              <div className="diagram-swatches">
-                {COLORS.map((c) => (
-                  <button
-                    key={c}
-                    aria-label={`Use color ${c}`}
-                    style={{ background: c }}
-                    onClick={() => updateNode({ color: c })}
-                  />
-                ))}
-              </div>
-            </>
-          ) : selectedEdge ? (
-            <>
-              <label>
-                Connector label
-                <input
-                  aria-label="Connector label"
-                  value={selectedEdge.label || ""}
-                  maxLength={200}
-                  onChange={(e) =>
-                    change({
-                      ...draft,
-                      edges: draft.edges.map((edge) =>
-                        edge.id === selectedEdge.id
-                          ? { ...edge, label: e.target.value }
-                          : edge,
-                      ),
-                    })
-                  }
-                />
-              </label>
-              <label>
-                Line type
-                <select
-                  aria-label="Connector type"
-                  value={selectedEdge.kind || "curve"}
-                  onChange={(e) => updateEdge({ kind: e.target.value })}
-                >
-                  {["curve", "straight", "orthogonal"].map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Line color
-                <input
-                  type="color"
-                  value={selectedEdge.color || "#758093"}
-                  onChange={(e) => updateEdge({ color: e.target.value })}
-                />
-              </label>
-              <label>
-                Line width
-                <input
-                  type="number"
-                  min="1"
-                  max="12"
-                  value={selectedEdge.width || 2}
-                  onChange={(e) =>
-                    updateEdge({ width: Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={!!selectedEdge.dashed}
-                  onChange={(e) => updateEdge({ dashed: e.target.checked })}
-                />
-                Dashed
-              </label>
-              {["startArrow", "endArrow"].map((key) => (
-                <label key={key}>
-                  {key}
-                  <select
-                    aria-label={key}
-                    value={selectedEdge[key] || "none"}
-                    onChange={(e) => updateEdge({ [key]: e.target.value })}
-                  >
-                    {["none", "arrow", "diamond", "circle"].map((v) => (
-                      <option key={v}>{v}</option>
-                    ))}
-                  </select>
-                </label>
-              ))}
-            </>
-          ) : (
-            <p>
-              Select a shape or connector to edit it. Arrow keys move a focused
-              shape.
-            </p>
-          )}
-          <button disabled={!selected && !selectedEdge} onClick={remove}>
-            Delete selected
-          </button>
-        </aside>
-      </div>
-      {!!pendingUploads && (
-        <p className="diagram-upload-status" role="status">
-          Uploading {pendingUploads} asset{pendingUploads === 1 ? "" : "s"}…
-          Save and close will be available when finished.
-        </p>
-      )}
       {error && (
-        <p className="diagram-error" role="alert">
+        <p className="native-editor-error" role="alert">
           {error}
         </p>
       )}
-      {menu && (
-        <div
-          className="diagram-context-menu"
-          style={{ left: menu.x, top: menu.y }}
-          role="menu"
-        >
-          {[
-            [
-              "Select all",
-              () =>
-                setDraft({
-                  ...draft,
-                  nodes: draft.nodes.map((n) => ({ ...n, selected: true })),
-                }),
-            ],
-            ["Duplicate", () => change(duplicateSelection(draft))],
-            ["Group", () => change(groupSelection(draft))],
-            ["Delete", remove],
-          ].map(([label, fn]) => (
-            <button
-              role="menuitem"
-              key={label}
-              onClick={() => {
-                fn();
-                setMenu(null);
-              }}
-            >
-              {label}
-            </button>
-          ))}
+      <div className="native-editor-body">
+        <div className="native-canvas-wrap">
+          <iframe
+            ref={frame}
+            title="draw.io diagram editor"
+            src={drawioUrl()}
+            className="native-drawio-frame"
+            sandbox="allow-scripts allow-same-origin allow-downloads"
+          />
+          {(!ready || blocked) && (
+            <div className="native-canvas-shield">
+              {!ready ? "Loading local editor…" : saving ? "Saving…" : ""}
+            </div>
+          )}
         </div>
-      )}
+        {panel && (
+          <aside className="native-editor-sidebar">
+            <ReferencePanel
+              references={draft.references}
+              context={context}
+              onOpen={(link) => {
+                if (dirty || blocked) {
+                  setError(
+                    "Save or close this diagram before opening a reference.",
+                  );
+                  return;
+                }
+                completed.current = true;
+                onClose();
+                followReference(link, context);
+              }}
+              disabled={blocked}
+              onChange={(references) => change({ ...draft, references })}
+            />
+            <p className="native-help">
+              References stay with this diagram. To link a shape, use its
+              draw.io link field with a reference address below.
+            </p>
+            {draft.references.map((r) => (
+              <label className="native-ref-address" key={r.id}>
+                {r.label}
+                <input
+                  readOnly
+                  aria-label={`Reference address ${r.label}`}
+                  value={`thread:${r.id}`}
+                  onFocus={(e) => e.target.select()}
+                />
+              </label>
+            ))}
+            <section className="native-file-tools">
+              <h3>Files</h3>
+              <button
+                disabled={!ready || blocked}
+                onClick={() => exportFile("xml")}
+              >
+                Export .drawio
+              </button>
+              <button
+                disabled={!ready || blocked}
+                onClick={() => exportFile("svg")}
+              >
+                Export SVG
+              </button>
+              <button
+                disabled={!ready || blocked}
+                onClick={() => exportFile("png")}
+              >
+                Export PNG
+              </button>
+              <label>
+                Import diagram
+                <input
+                  type="file"
+                  accept=".drawio,.xml,.json"
+                  disabled={blocked}
+                  onChange={importFile}
+                />
+              </label>
+            </section>
+            <EditorLibrary
+              context={context}
+              draft={draft}
+              disabled={blocked || !ready}
+              dirty={dirty}
+              getDocument={async () => {
+                const result = await requestExport("png");
+                return parseDiagram({
+                  ...state.current.draft,
+                  xml: result.xml,
+                  preview: result.data,
+                });
+              }}
+              onLoad={setImported}
+              onReview={(proposal) => {
+                setReview(proposal);
+                load(parseDiagram(proposal.diagram));
+              }}
+            />
+          </aside>
+        )}
+      </div>
       {recovery && (
-        <div className="diagram-discard-backdrop">
-          <div
-            className="diagram-discard"
-            role="alertdialog"
-            aria-label="Recover diagram draft"
+        <div
+          className="native-decision"
+          role="alertdialog"
+          aria-label="Recover diagram draft"
+        >
+          <h2>Recover unfinished diagram?</h2>
+          <p>
+            A browser draft is available. Recover it or continue with the saved
+            note.
+          </p>
+          <button
+            onClick={() => {
+              const old = recovery;
+              setRecovery(null);
+              setBaseline(old.baseline || baseline);
+              load(old.diagram);
+            }}
           >
-            <h3>Recover unsaved diagram?</h3>
-            <p>
-              {recovery.baseline !== serial(initial)
-                ? "The saved diagram has changed. Restoring keeps your draft separate until you review the save conflict."
-                : "An unfinished draft was found on this device."}
-            </p>
-            <button
-              onClick={() => {
-                setDraft(recovery.diagram);
-                baseline.current = recovery.baseline;
-                if (recovery.viewport) flow.setViewport(recovery.viewport);
-                setRecovery(null);
-              }}
-            >
-              Restore draft
-            </button>
-            <button
-              onClick={() => {
-                clearRecovery();
-                setRecovery(null);
-              }}
-            >
-              Discard recovered draft
-            </button>
-          </div>
+            Recover draft
+          </button>
+          <button
+            onClick={() => {
+              if (key) localStorage.removeItem(key);
+              setRecovery(null);
+            }}
+          >
+            Use saved diagram
+          </button>
         </div>
       )}
-      {conflict && (
-        <div className="diagram-discard-backdrop">
-          <div
-            className="diagram-discard"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="diagram-conflict-title"
+      {conflict && !recovery && (
+        <div
+          className="native-decision"
+          role="alertdialog"
+          aria-label="Diagram conflict"
+        >
+          <h2>The saved diagram changed</h2>
+          <p>
+            Your draft is retained. Choose which source to continue editing
+            before saving.
+          </p>
+          <button
+            onClick={() => {
+              setBaseline(stringify(initial));
+              load(parseDiagram(initial));
+              if (key) localStorage.removeItem(key);
+            }}
           >
-            <h3 id="diagram-conflict-title">
-              Diagram changed in another session
-            </h3>
-            <p>
-              Your draft is still here. Download it to keep a separate copy, or
-              explicitly replace the current diagram with your draft.
-            </p>
-            <button autoFocus onClick={() => setConflict(false)}>
-              Keep editing
-            </button>
-            <button onClick={downloadDraft}>Download my draft</button>
-            <button onClick={() => save(true)}>Replace with my diagram</button>
-          </div>
+            Use latest saved
+          </button>
+          <button onClick={() => setBaseline(stringify(initial))}>
+            Keep my draft
+          </button>
+        </div>
+      )}
+      {imported && (
+        <div
+          className="native-decision"
+          role="alertdialog"
+          aria-label="Review diagram import"
+        >
+          <h2>Replace this diagram?</h2>
+          <p>
+            The imported native source will replace the current canvas when you
+            continue. Save diagram persists it.
+          </p>
+          <details>
+            <summary>Imported XML</summary>
+            <pre>{imported.xml}</pre>
+          </details>
+          <button
+            onClick={() => {
+              load(imported);
+              setImported(null);
+            }}
+          >
+            Replace canvas
+          </button>
+          <button onClick={() => setImported(null)}>Cancel import</button>
+        </div>
+      )}
+      {review && (
+        <div className="native-proposal-bar">
+          <strong>Reviewing agent proposal: {review.summary}</strong>
+          <button
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await context?.beforeProposalApply?.();
+                const { api } = await import("../storage/api.js");
+                await api(`/diagram-proposals/${review.id}/apply`, {
+                  method: "POST",
+                  body: { expectedRevision: context.revision },
+                });
+                await context?.onProposalApplied?.();
+                completed.current = true;
+                onClose();
+              } catch (e) {
+                setError(e.message);
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            Apply reviewed proposal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() => {
+              setReview(null);
+              load(parseDiagram(initial));
+            }}
+          >
+            Finish review
+          </button>
         </div>
       )}
       {discard && (
-        <div className="diagram-discard-backdrop">
-          <div
-            className="diagram-discard"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="diagram-discard-title"
+        <div
+          className="native-decision"
+          role="alertdialog"
+          aria-label="Discard diagram changes"
+        >
+          <h2>Discard unsaved changes?</h2>
+          <button
+            onClick={() => {
+              completed.current = true;
+              if (key) localStorage.removeItem(key);
+              onClose();
+            }}
           >
-            <h3 id="diagram-discard-title">Discard diagram changes?</h3>
-            <p>Your last saved diagram will be kept.</p>
-            <button autoFocus onClick={() => setDiscard(false)}>
-              Keep editing
-            </button>
-            <button
-              onClick={() => {
-                clearRecovery();
-                onClose();
-              }}
-            >
-              Discard changes
-            </button>
-          </div>
+            Discard changes
+          </button>
+          <button onClick={() => setDiscard(false)}>Keep editing</button>
         </div>
       )}
     </dialog>

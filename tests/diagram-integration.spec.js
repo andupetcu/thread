@@ -1,3 +1,5 @@
+import { defaultDiagram } from "../src/diagram/model.js";
+import { importDrawio } from "./native-diagram-helpers.js";
 import { test, expect } from "./legacy-fixture.js";
 
 test("OKF diagram save stays a recoverable concept draft until Save concept", async ({
@@ -10,7 +12,9 @@ test("OKF diagram save stays a recoverable concept draft until Save concept", as
   let { bundle } = await created.json();
   const endpoint = `/api/okf/bundles/${bundle.id}`;
   const body =
-    'Before diagram\n\n```thread-diagram\n{"version":1,"nodes":[],"edges":[]}\n```\n\nAfter diagram';
+    "Before diagram\n\n```thread-diagram\n" +
+    JSON.stringify(defaultDiagram()) +
+    "\n```\n\nAfter diagram";
   ({ bundle } = await (
     await request.post(`${endpoint}/import`, {
       data: {
@@ -30,8 +34,7 @@ test("OKF diagram save stays a recoverable concept draft until Save concept", as
     .click();
   await page.getByRole("treeitem", { name: "guide.md", exact: true }).click();
   await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
-  await page.getByRole("button", { name: "Add process", exact: true }).click();
-  await page.getByLabel("Shape label", { exact: true }).fill("Concept draft");
+  await importDrawio(page, "Concept draft");
   await page.getByRole("button", { name: "Save diagram", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Save concept", exact: true }),
@@ -75,7 +78,7 @@ test("OKF diagram save stays a recoverable concept draft until Save concept", as
     .click();
   await page.getByRole("treeitem", { name: "guide.md", exact: true }).click();
   await expect(
-    page.getByAltText("Diagram: Concept draft", { exact: true }),
+    page.getByAltText("Diagram preview", { exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Edit diagram", exact: true }).click();
   await expect(

@@ -1,3 +1,4 @@
+import { MAX_DOCUMENT_CHARACTERS } from "../shared/document-limits.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 import { StoreError } from "./store.mjs";
@@ -172,7 +173,7 @@ export class OkfStore {
       )
     )
       throw new StoreError("Path collides with another bundle file.");
-    if (typeof source !== "string" || source.length > 2_000_000)
+    if (typeof source !== "string" || source.length > MAX_DOCUMENT_CHARACTERS)
       throw new StoreError("Invalid document source.");
     const existing = this.get(id, false).entries.find((e) => e.path === p);
     if (existing?.kind === "asset")

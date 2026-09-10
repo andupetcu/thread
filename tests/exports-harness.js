@@ -1,12 +1,23 @@
-import { diagramToSvg, templateDiagram } from "../src/diagram/model";
+import { defaultDiagram } from "../src/diagram/model";
 import { toPdf } from "../src/export-pdf";
 import { toDocx } from "../src/export-docx";
 import { toMarkdownBundle } from "../src/export-markdown";
 import "../src/style.css";
 const sample = document.getElementById("sample"),
-  diagram = templateDiagram("flow");
-const svg = diagramToSvg(diagram),
-  src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  diagram = defaultDiagram();
+const canvas = document.createElement("canvas");
+canvas.width = 600;
+canvas.height = 180;
+const ctx = canvas.getContext("2d");
+ctx.fillStyle = "#fff";
+ctx.fillRect(0, 0, 600, 180);
+ctx.fillStyle = "#dbeafe";
+ctx.fillRect(40, 50, 220, 80);
+ctx.fillStyle = "#1e3a8a";
+ctx.font = "22px sans-serif";
+ctx.fillText("Project diagram", 60, 96);
+diagram.preview = canvas.toDataURL("image/png");
+const src = diagram.preview;
 sample.innerHTML =
   '<h2>Project decisions</h2><p>A formatted <strong>decision</strong> with <em>context</em> and <a href="https://example.com">a source</a>.</p><img alt="Project diagram" src="' +
   src +

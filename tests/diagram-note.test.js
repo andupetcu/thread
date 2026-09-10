@@ -42,20 +42,12 @@ it("replaces only the diagram while retaining list and quote indentation", () =>
 });
 it("includes links from real diagram nodes in note backlinks but ignores code examples", () => {
   const diagram = {
-    version: 2,
-    nodes: [
-      {
-        id: "x",
-        position: { x: 0, y: 0 },
-        data: {
-          shape: "process",
-          label: "Linked",
-          color: "#ffffff",
-          link: { kind: "note", noteId: "target" },
-        },
-      },
+    version: 3,
+    engine: "drawio",
+    xml: "<mxGraphModel><root/></mxGraphModel>",
+    references: [
+      { id: "x", label: "Linked", link: { kind: "note", noteId: "target" } },
     ],
-    edges: [],
   };
   const body = "```thread-diagram\n" + JSON.stringify(diagram) + "\n```";
   expect(metadata(body).links).toEqual(["target"]);

@@ -1,3 +1,9 @@
+import { defaultDiagram } from "../src/diagram/model.js";
+const nativeDiagram = () => ({
+  ...defaultDiagram(),
+  preview:
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=",
+});
 import { it, expect } from "vitest";
 import { strFromU8 } from "fflate";
 import {
@@ -22,7 +28,9 @@ it("reports possible credentials before export without repeating their contents"
 
 it("exports frontmatter first with unknown fields, stable paths, assets and visual diagram sidecars", async () => {
   const body =
-    '![File](/api/assets/image.png)\n\n```thread-diagram\n{"version":1,"nodes":[],"edges":[]}\n```';
+    "![File](/api/assets/image.png)\n\n```thread-diagram\n" +
+    JSON.stringify(nativeDiagram()) +
+    "\n```";
   const source = "---\ntype: Guide\ncustom: {keep: null}\n---\n" + body;
   const result = await exportPortableBundle(
     {
@@ -91,7 +99,8 @@ it("converts included note and block references without touching code and report
 });
 
 it("does not overwrite existing files when allocating generated diagram paths", async () => {
-  const body = '```thread-diagram\n{"nodes":[],"edges":[]}\n```';
+  const body =
+    "```thread-diagram\n" + JSON.stringify(nativeDiagram()) + "\n```";
   const result = await exportPortableBundle(
     {
       id: "bundle",

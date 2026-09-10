@@ -1,3 +1,4 @@
+import { MAX_DOCUMENT_CHARACTERS } from "../shared/document-limits.mjs";
 import { DatabaseSync } from "node:sqlite";
 import {
   mkdtempSync,
@@ -33,7 +34,7 @@ export function validateNote(note) {
     typeof note.title !== "string" ||
     note.title.length > 500 ||
     typeof note.body !== "string" ||
-    note.body.length > 2_000_000
+    note.body.length > MAX_DOCUMENT_CHARACTERS
   )
     throw new StoreError("Invalid note: ID, title or content is not valid.");
   if (
@@ -266,7 +267,7 @@ function validateSnapshot(snapshot, files) {
       /[\r\n]/.test(a.mime) ||
       !Number.isInteger(a.size) ||
       a.size < 1 ||
-      a.size > 20000000 ||
+      a.size > 20_000_000 ||
       !files["assets/" + a.id] ||
       files["assets/" + a.id].length !== a.size
     )
@@ -728,7 +729,7 @@ export class WorkspaceStore {
           if (
             total > 500000000 ||
             entry.originalSize >
-              (entry.name === "workspace.json" ? 250000000 : 20000000)
+              (entry.name === "workspace.json" ? 250000000 : 20_000_000)
           )
             throw new StoreError(
               "Backup archive expands beyond its size limit.",

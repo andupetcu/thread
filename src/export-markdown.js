@@ -2,9 +2,10 @@ import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import { strToU8, zipSync } from "fflate";
-import { parseMindMap, layoutMindMap } from "./mindmap/model.js";
-import { diagramToPng, parseDiagram } from "./diagram/model";
+import { parseMindMap } from "./mindmap/model.js";
+import { parseDiagram } from "./diagram/model.js";
 import {
+  nativeVisualFile,
   projectDiagramResources,
   projectedDiagramFence,
   relocateDiagramUrl,
@@ -20,9 +21,7 @@ async function fetchAsset(url) {
   return new Uint8Array(await response.arrayBuffer());
 }
 async function renderDiagram(value) {
-  return new Uint8Array(
-    await (await fetch(await diagramToPng(value))).arrayBuffer(),
-  );
+  return new Uint8Array(await (await fetch(value.preview)).arrayBuffer());
 }
 export async function portableMarkdownFiles(note, options = {}) {
   const load = options.fetchAsset || fetchAsset,
@@ -72,93 +71,63 @@ export async function portableMarkdownFiles(note, options = {}) {
   }
   visit(parser.parse(body));
   for (const [url, path] of assets) files[path] = await load(url);
-  for (let i = 0; i < diagrams.length; i++) {
-    const node = diagrams[i],
-      data = parseDiagram(node.value),
-      path = `diagrams/diagram-${i + 1}`;
-    const project = (fromFile) =>
-      projectDiagramResources(data, {
-        relativeUrl: (url) => relocateDiagramUrl(url, name + ".md", fromFile),
-        assetUrl: async (url) => {
-          if (!localDiagramAsset(url))
-            throw new Error(`Cannot locate diagram attachment: ${url}`);
-          let target = assets.get(url);
-          if (!target) {
-            target = "assets/" + diagramAssetName(url);
-            let suffix = 2;
-            while ([...assets.values()].includes(target))
-              target = `assets/${suffix++}-${diagramAssetName(url)}`;
-            assets.set(url, target);
-          }
-          if (!files[target]) files[target] = await load(url);
-          return relativeDiagramPath(fromFile, target);
-        },
-        linkUrl: (link) => {
-          warnings.add(
-            `Diagram reference requires its Thread workspace: ${link.noteId || link.path || link.blockId}`,
-          );
-        },
-      });
-    files[path + ".json"] = strToU8(
-      JSON.stringify(await project(path + ".json"), null, 2),
-    );
-    files[path + ".png"] = await render(data);
-    edits.push(
-      projectedDiagramFence(
-        body,
-        node,
-        JSON.stringify(await project(name + ".md")),
-        `![Diagram ${i + 1}](${path}.png)`,
-      ),
-    );
-  }
-  for (let i = 0; i < mindmaps.length; i++) {
-    const node = mindmaps[i],
-      data = parseMindMap(node.value),
-      path = `mindmaps/mindmap-${i + 1}`;
-    const project = async (fromFile) => {
-      const projected = parseMindMap(data);
-      for (const idea of projected.nodes) {
-        const link = idea.link;
-        if (!link) continue;
-        if (link.kind === "url")
-          idea.link = {
-            ...link,
-            url: relocateDiagramUrl(link.url, name + ".md", fromFile),
-          };
-        else if (link.kind === "asset") {
-          if (!localDiagramAsset(link.url))
-            throw new Error(`Cannot locate mind map attachment: ${link.url}`);
-          let target = assets.get(link.url);
-          if (!target) {
-            target = "assets/" + diagramAssetName(link.url);
-            let suffix = 2;
-            while ([...assets.values()].includes(target))
-              target = `assets/${suffix++}-${diagramAssetName(link.url)}`;
-            assets.set(link.url, target);
-          }
-          if (!files[target]) files[target] = await load(link.url);
-          idea.link = { ...link, url: relativeDiagramPath(fromFile, target) };
-        } else
-          warnings.add(
-            `Mind map reference requires its Thread workspace: ${link.noteId || link.path || link.blockId || link.bundleId}`,
-          );
-      }
-      return parseMindMap(projected);
-    };
-    files[path + ".json"] = strToU8(
-      JSON.stringify(await project(path + ".json"), null, 2),
-    );
-    files[path + ".png"] = await render(layoutMindMap(data));
-    edits.push(
-      projectedDiagramFence(
-        body,
-        node,
-        JSON.stringify(await project(name + ".md")),
-        `![Mind map ${i + 1}](${path}.png)\n\n[Editable mind map (Thread JSON)](${path}.json)`,
-        "thread-mindmap",
-      ),
-    );
+  for (const [nodes, language, directory, label] of [
+    [diagrams, "thread-diagram", "diagrams", "Diagram"],
+    [mindmaps, "thread-mindmap", "mindmaps", "Mind map"],
+  ]) {
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i],
+        data =
+          language === "thread-diagram"
+            ? parseDiagram(node.value)
+            : parseMindMap(node.value),
+        path = `${directory}/${language === "thread-diagram" ? "diagram" : "mindmap"}-${i + 1}`;
+      const project = (fromFile) =>
+        projectDiagramResources(data, {
+          relativeUrl: (url) => relocateDiagramUrl(url, name + ".md", fromFile),
+          assetUrl: async (url) => {
+            if (!localDiagramAsset(url))
+              throw new Error(`Cannot locate attachment: ${url}`);
+            let target = assets.get(url);
+            if (!target) {
+              target = "assets/" + diagramAssetName(url);
+              let suffix = 2;
+              while ([...assets.values()].includes(target))
+                target = `assets/${suffix++}-${diagramAssetName(url)}`;
+              assets.set(url, target);
+            }
+            if (!files[target]) files[target] = await load(url);
+            return relativeDiagramPath(fromFile, target);
+          },
+          linkUrl: (link) => {
+            warnings.add(
+              `${label} reference requires its Thread workspace: ${link.noteId || link.bundleId}`,
+            );
+          },
+        });
+      const sidecar = await project(path + ".json");
+      files[path + ".json"] = strToU8(JSON.stringify(sidecar, null, 2));
+      const native = nativeVisualFile(sidecar);
+      files[path + native.extension] = strToU8(native.content);
+      let preview = "";
+      if (data.preview) {
+        files[path + ".png"] = await render(data);
+        preview = `![${label} ${i + 1}](${path}.png)\n\n`;
+      } else
+        warnings.add(
+          `${label} ${i + 1}: no saved PNG preview; native editable source included.`,
+        );
+      edits.push(
+        projectedDiagramFence(
+          body,
+          node,
+          JSON.stringify(await project(name + ".md")),
+          preview +
+            `[Editable ${label.toLowerCase()}](${path}${native.extension})`,
+          language,
+        ),
+      );
+    }
   }
   let portable = body;
   for (const edit of edits.sort((a, b) => b.start - a.start))
@@ -166,7 +135,7 @@ export async function portableMarkdownFiles(note, options = {}) {
       portable.slice(0, edit.start) + edit.value + portable.slice(edit.end);
   files[name + ".md"] = strToU8(`# ${title}\n\n${portable}\n`);
   files["README.txt"] = strToU8(
-    "Open the Markdown file in any Markdown reader. Local attachments are in assets/. Diagrams and mind maps retain their editable thread-diagram/thread-mindmap JSON fences and include PNG previews. Note and block references use Thread addresses and require their source notes.\n" +
+    "Open the Markdown file in any Markdown reader. Local attachments are in assets/. Diagrams and mind maps retain their editable thread-diagram/thread-mindmap JSON fences and include native .drawio/.drawnix files plus saved PNG previews when available. Note and block references use Thread addresses and require their source notes.\n" +
       [...warnings].join("\n"),
   );
   return files;

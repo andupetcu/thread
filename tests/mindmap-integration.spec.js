@@ -1,5 +1,5 @@
 import { test, expect } from "./legacy-fixture.js";
-import { defaultMindMap, updateIdea } from "../src/mindmap/model.js";
+import { defaultMindMap } from "../src/mindmap/model.js";
 
 test("OKF mind-map draft saves with concept metadata and clears only persisted recovery", async ({
   page,
@@ -36,8 +36,17 @@ test("OKF mind-map draft saves with concept metadata and clears only persisted r
     .getByRole("button", { name: "Edit mind map", exact: true })
     .click();
   await page
-    .getByLabel("Idea label", { exact: true })
-    .fill("Research questions");
+    .getByLabel("Import Markdown", { exact: true })
+    .fill("# Research questions\n- Evidence\n- Next steps");
+  await page
+    .getByRole("button", { name: "Review Markdown", exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: "Replace with imported mind map",
+      exact: true,
+    })
+    .click();
   await page
     .getByRole("button", { name: "Save mind map", exact: true })
     .click();
@@ -82,7 +91,7 @@ test("OKF mind-map draft saves with concept metadata and clears only persisted r
     .click();
   await page.getByRole("treeitem", { name: "ideas.md", exact: true }).click();
   await expect(
-    page.getByAltText("Mind map: Research questions", { exact: true }),
+    page.getByAltText("Saved mind map preview", { exact: true }),
   ).toBeVisible();
 });
 
@@ -113,10 +122,13 @@ test("mind-map bundle and OKF note references navigate to their actual workspace
     await (await request.get("/api/workspace")).json()
   ).notes.find((n) => n.id === "welcome");
   let map = defaultMindMap();
-  map = updateIdea(map, map.rootId, {
-    label: "Open knowledge",
-    link: { kind: "bundle", bundleId: bundle.id },
-  });
+  map.references = [
+    {
+      id: "r",
+      label: "Open knowledge",
+      link: { kind: "bundle", bundleId: bundle.id },
+    },
+  ];
   const body = "```thread-mindmap\n" + JSON.stringify(map) + "\n```";
   const saved = await request.put("/api/notes/welcome", {
     data: { note: { ...current, body }, baseRevision: current.revision },
@@ -132,15 +144,13 @@ test("mind-map bundle and OKF note references navigate to their actual workspace
   const latest = (
     await (await request.get("/api/workspace")).json()
   ).notes.find((n) => n.id === "welcome");
-  map = updateIdea(map, map.rootId, {
-    label: "Open concept",
-    link: {
-      kind: "concept",
-      noteId: target.noteId,
-      bundleId: bundle.id,
-      path: "target.md",
+  map.references = [
+    {
+      id: "r",
+      label: "Open concept",
+      link: { kind: "concept", noteId: target.noteId, bundleId: bundle.id },
     },
-  });
+  ];
   expect(
     (
       await request.put("/api/notes/welcome", {
@@ -165,7 +175,9 @@ test("mind-map bundle and OKF note references navigate to their actual workspace
     .getByRole("button", { name: "Open concept ↗", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Linked concept target", exact: true }),
+    page
+      .locator("article")
+      .getByRole("heading", { name: "Linked concept target", exact: true }),
   ).toBeVisible();
 });
 
@@ -178,10 +190,16 @@ test("an unavailable bundle reference reports an error without navigating to ano
   const current = (
     await (await request.get("/api/workspace")).json()
   ).notes.find((n) => n.id === "welcome");
-  const map = updateIdea(defaultMindMap(), "root", {
-    label: "Unavailable reference",
-    link: { kind: "bundle", bundleId: "../settings" },
-  });
+  const map = {
+    ...defaultMindMap(),
+    references: [
+      {
+        id: "r",
+        label: "Unavailable reference",
+        link: { kind: "bundle", bundleId: "../settings" },
+      },
+    ],
+  };
   expect(
     (
       await request.put("/api/notes/welcome", {

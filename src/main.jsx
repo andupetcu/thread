@@ -61,7 +61,8 @@ import "./style.css";
 const BlockEditor = lazy(() => import("./BlockEditor"));
 import ContextPanel from "./ContextPanel";
 import BundleWorkspace, { BundleSidebar } from "./okf/BundleWorkspace";
-import { parseBlocks, suggestions } from "./editor-model";
+import { suggestions } from "./editor-model";
+import { diagramFences } from "./diagram/note-diagrams.js";
 const KEY = "thread.notes.v1";
 function safeTheme() {
   try {
@@ -1249,7 +1250,8 @@ function NotePane({
     [find, setFind] = useState(""),
     [showFind, setShowFind] = useState(false),
     [exports, setExports] = useState(false),
-    [blockMode, setBlockMode] = useState(false);
+    [blockMode, setBlockMode] = useState(false),
+    [sourceOpen, setSourceOpen] = useState(false);
   const input = useRef();
   const insertionCaret = useRef(null);
   // Apply the caret with the controlled value commit, before a later user
@@ -1262,17 +1264,14 @@ function NotePane({
     input.current?.focus();
     input.current?.setSelectionRange(pending.position, pending.position);
   }, [note.id, note.body, completion]);
-  const sourceVisuals = useMemo(
+  const hasVisuals = useMemo(
     () =>
-      editing
-        ? parseBlocks(note.body).filter(
-            (block) =>
-              block.type === "code" &&
-              /^(`{3,}|~{3,})thread-(?:diagram|mindmap)\b/.test(block.source),
-          )
-        : [],
-    [editing, note.body],
+      diagramFences(note.body).length > 0 ||
+      diagramFences(note.body, "thread-mindmap").length > 0,
+    [note.body],
   );
+  const visualEditing = editing && hasVisuals && !sourceOpen;
+  const sourceEditing = editing && !visualEditing;
   const meta = metadata(note.body);
   const backlinks = notes.filter((n) =>
     metadata(n.body).links.includes(note.id),
@@ -1301,7 +1300,11 @@ function NotePane({
     end = input.current?.selectionEnd,
   ) => {
     const body = note.body.slice(0, start) + value + note.body.slice(end);
-    insertionCaret.current = { noteId: note.id, body, position: start + value.length };
+    insertionCaret.current = {
+      noteId: note.id,
+      body,
+      position: start + value.length,
+    };
     update(note.id, { body });
     setCompletion(null);
   };
@@ -1313,6 +1316,7 @@ function NotePane({
   const findNext = () => {
     if (!find) return;
     setEditing(true);
+    setSourceOpen(true);
     setBlockMode(false);
     requestAnimationFrame(() => {
       const el = input.current;
@@ -1367,6 +1371,7 @@ function NotePane({
             icon={editing ? Eye : Code2}
             title={editing ? "Preview note" : "Edit Markdown"}
             onClick={() => {
+              setSourceOpen(false);
               setEditing((p) => !p);
               setBlockMode(false);
               setCompletion(null);
@@ -1513,7 +1518,30 @@ function NotePane({
             ))}
           </div>
         </div>
-        {editing && (
+        {editing && hasVisuals && (
+          <div
+            className="block-edit-modes"
+            role="group"
+            aria-label="Note editing mode"
+          >
+            <button
+              aria-pressed={!sourceOpen}
+              onClick={() => {
+                setSourceOpen(false);
+                setCompletion(null);
+              }}
+            >
+              Visual edit
+            </button>
+            <button
+              aria-pressed={sourceOpen}
+              onClick={() => setSourceOpen(true)}
+            >
+              Code edit
+            </button>
+          </div>
+        )}
+        {sourceEditing && (
           <div className="formatbar">
             <button title="Bold" onClick={() => format("**", "**")}>
               <b>B</b>
@@ -1535,28 +1563,7 @@ function NotePane({
             </span>
           </div>
         )}
-        {editing && sourceVisuals.length > 0 && (
-          <section
-            className="source-diagrams"
-            aria-label="Visual blocks in this note"
-          >
-            <h3>Diagrams and mind maps</h3>
-            <p>
-              Edit visual blocks here. Their Markdown data remains in the source
-              below.
-            </p>
-            {sourceVisuals.map((block, index) => (
-              <Render
-                key={block.id || index}
-                note={{ ...note, body: block.source }}
-                notes={notes}
-                open={open}
-                offset={block.start}
-              />
-            ))}
-          </section>
-        )}
-        {editing && (
+        {sourceEditing && (
           <div className="editor-wrap">
             <textarea
               ref={input}
@@ -1565,6 +1572,7 @@ function NotePane({
               value={note.body}
               placeholder="Start writing, or type / for a template…"
               onChange={(e) => {
+                setSourceOpen(true);
                 update(note.id, { body: e.target.value });
                 detect(e.target.value, e.target.selectionStart);
               }}
@@ -1638,7 +1646,7 @@ function NotePane({
             )}
           </div>
         )}
-        {blockMode && (
+        {(blockMode || visualEditing) && (
           <BlockEditor
             note={note}
             notes={notes}

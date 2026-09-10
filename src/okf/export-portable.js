@@ -2,9 +2,10 @@ import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import { strToU8, zipSync } from "fflate";
-import { parseMindMap, layoutMindMap } from "../mindmap/model.js";
-import { diagramToPng, parseDiagram } from "../diagram/model.js";
+import { parseMindMap } from "../mindmap/model.js";
+import { parseDiagram } from "../diagram/model.js";
 import {
+  nativeVisualFile,
   projectDiagramResources,
   projectedDiagramFence,
   relocateDiagramUrl,
@@ -23,9 +24,7 @@ async function fetchAsset(url) {
   return new Uint8Array(await response.arrayBuffer());
 }
 async function renderDiagram(data, options) {
-  return new Uint8Array(
-    await (await fetch(await diagramToPng(data, options))).arrayBuffer(),
-  );
+  return new Uint8Array(await (await fetch(data.preview)).arrayBuffer());
 }
 
 export function bundleExportWarnings(bundle) {
@@ -112,27 +111,6 @@ export async function exportPortableBundle(bundle, options = {}) {
     }
     if (!files[target]) files[target] = await loadOnce(address);
     return { target, bytes: files[target] };
-  };
-  const imageData = (bytes) => {
-    if (!(bytes instanceof Uint8Array) || bytes.length > 10_000_000)
-      throw new Error("Invalid or oversized diagram image attachment.");
-    const matches = (signature) =>
-      signature.every((value, index) => bytes[index] === value);
-    const mime = matches([137, 80, 78, 71, 13, 10, 26, 10])
-      ? "image/png"
-      : matches([255, 216, 255])
-        ? "image/jpeg"
-        : matches([71, 73, 70, 56])
-          ? "image/gif"
-          : matches([82, 73, 70, 70]) &&
-              String.fromCharCode(...bytes.subarray(8, 12)) === "WEBP"
-            ? "image/webp"
-            : null;
-    if (!mime) throw new Error("Unsupported diagram image attachment.");
-    let binary = "";
-    for (let offset = 0; offset < bytes.length; offset += 8192)
-      binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
-    return `data:${mime};base64,${btoa(binary)}`;
   };
   const notes = new Map();
   for (const entry of entries) {
@@ -272,132 +250,78 @@ export async function exportPortableBundle(bundle, options = {}) {
     visit(parser.parse(body));
     for (const [url, path] of assets)
       if (!files[path]) files[path] = await loadOnce(url);
-    for (let i = 0; i < diagrams.length; i++) {
-      const node = diagrams[i],
-        path = `${folder}/${entryIndex}/diagram-${i + 1}`;
-      try {
-        const data = parseDiagram(node.value);
-        const project = (fromFile) =>
-          projectDiagramResources(data, {
-            relativeUrl: (url) => relocateDiagramUrl(url, entry.path, fromFile),
-            assetUrl: async (url) => {
-              const { target } = await resource(entry, url);
-              return relativeDiagramPath(fromFile, target);
-            },
-            linkUrl: (link) => {
-              const target = notes.get(link.noteId);
-              if (
-                target &&
-                (link.kind !== "block" ||
-                  blockSource(target, link.blockId) !== null)
-              )
-                return (
-                  relativeDiagramPath(fromFile, target.path) +
-                  (link.kind === "block"
-                    ? `#block-${encodeURIComponent(link.blockId)}`
-                    : "")
-                );
-              const warning = `${entry.path}: excluded or missing diagram reference ${link.noteId || link.path || link.blockId}`;
-              if (!warnings.includes(warning)) warnings.push(warning);
-            },
-          });
-        files[path + ".json"] = strToU8(
-          JSON.stringify(await project(path + ".json"), null, 2),
-        );
-        files[path + ".png"] = await render(data, {
-          resolveAsset: async (url) =>
-            imageData((await resource(entry, url)).bytes),
-        });
-        edits.push(
-          projectedDiagramFence(
-            body,
-            node,
-            JSON.stringify(await project(entry.path)),
-            `![Diagram ${i + 1}](${href(path)}.png)\n\n[Editable diagram (Thread JSON)](${href(path)}.json)`,
-          ),
-        );
-      } catch (error) {
-        warnings.push(
-          `${entry.path}: diagram ${i + 1} retained as source; ${error.message}`,
-        );
-      }
-    }
-    for (let i = 0; i < mindmaps.length; i++) {
-      const node = mindmaps[i],
-        path = `${folder}/${entryIndex}/mindmap-${i + 1}`;
-      try {
-        const data = parseMindMap(node.value);
-        const project = async (fromFile) => {
-          const projected = parseMindMap(data);
-          for (const idea of projected.nodes) {
-            const link = idea.link;
-            if (!link) continue;
-            if (link.kind === "url")
-              idea.link = {
-                ...link,
-                url: relocateDiagramUrl(link.url, entry.path, fromFile),
-              };
-            else if (link.kind === "asset") {
-              const { target } = await resource(entry, link.url);
-              idea.link = {
-                ...link,
-                url: relativeDiagramPath(fromFile, target),
-              };
-            } else {
-              const target =
-                link.kind === "bundle"
-                  ? link.bundleId === bundle.id &&
-                    entries.find(
-                      (item) =>
-                        item.path === "index.md" &&
-                        typeof item.source === "string",
-                    )
-                  : notes.get(link.noteId) ||
-                    (link.kind === "concept" &&
-                      link.bundleId === bundle.id &&
+    for (const [nodes, language, label, stem] of [
+      [diagrams, "thread-diagram", "Diagram", "diagram"],
+      [mindmaps, "thread-mindmap", "Mind map", "mindmap"],
+    ]) {
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i],
+          path = `${folder}/${entryIndex}/${stem}-${i + 1}`;
+        try {
+          const data =
+            language === "thread-diagram"
+              ? parseDiagram(node.value)
+              : parseMindMap(node.value);
+          const project = (fromFile) =>
+            projectDiagramResources(data, {
+              relativeUrl: (url) =>
+                relocateDiagramUrl(url, entry.path, fromFile),
+              assetUrl: async (url) =>
+                relativeDiagramPath(
+                  fromFile,
+                  (await resource(entry, url)).target,
+                ),
+              linkUrl: (link) => {
+                const target =
+                  link.kind === "bundle"
+                    ? link.bundleId === bundle.id &&
                       entries.find(
-                        (item) =>
-                          item.path === link.path &&
-                          typeof item.source === "string",
-                      ));
-              if (
-                target &&
-                (link.kind !== "block" ||
-                  blockSource(target, link.blockId) !== null)
-              ) {
-                idea.link = {
-                  kind: "url",
-                  url:
+                        (e) =>
+                          e.path === "index.md" && typeof e.source === "string",
+                      )
+                    : notes.get(link.noteId);
+                if (
+                  target &&
+                  (link.kind !== "block" ||
+                    blockSource(target, link.blockId) !== null)
+                )
+                  return (
                     relativeDiagramPath(fromFile, target.path) +
                     (link.kind === "block"
                       ? `#block-${encodeURIComponent(link.blockId)}`
-                      : ""),
-                };
-              } else {
-                const warning = `${entry.path}: excluded or missing mind map reference ${link.noteId || link.path || link.blockId || link.bundleId}`;
+                      : "")
+                  );
+                const warning = `${entry.path}: excluded or missing ${stem} reference ${link.noteId || link.bundleId}`;
                 if (!warnings.includes(warning)) warnings.push(warning);
-              }
-            }
-          }
-          return parseMindMap(projected);
-        };
-        files[path + ".json"] = strToU8(
-          JSON.stringify(await project(path + ".json"), null, 2),
-        );
-        files[path + ".png"] = await render(layoutMindMap(data));
-        edits.push(
-          projectedDiagramFence(
-            body,
-            node,
-            JSON.stringify(await project(entry.path)),
-            `![Mind map ${i + 1}](${href(path)}.png)\n\n[Editable mind map (Thread JSON)](${href(path)}.json)`,
-            "thread-mindmap",
-          ),
-        );
-      } catch (error) {
-        warnings.push(
-          `${entry.path}: mind map ${i + 1} retained as source; ${error.message}`,
-        );
+              },
+            });
+          const sidecar = await project(path + ".json");
+          files[path + ".json"] = strToU8(JSON.stringify(sidecar, null, 2));
+          const native = nativeVisualFile(sidecar);
+          files[path + native.extension] = strToU8(native.content);
+          let preview = "";
+          if (data.preview) {
+            files[path + ".png"] = await render(data);
+            preview = `![${label} ${i + 1}](${href(path)}.png)\n\n`;
+          } else
+            warnings.push(
+              `${entry.path}: ${stem} ${i + 1}: no saved PNG preview; native editable source included.`,
+            );
+          edits.push(
+            projectedDiagramFence(
+              body,
+              node,
+              JSON.stringify(await project(entry.path)),
+              preview +
+                `[Editable ${label.toLowerCase()}](${href(path)}${native.extension})`,
+              language,
+            ),
+          );
+        } catch (error) {
+          warnings.push(
+            `${entry.path}: ${stem} ${i + 1} retained as source; ${error.message}`,
+          );
+        }
       }
     }
     let result = body;

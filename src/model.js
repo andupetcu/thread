@@ -9,8 +9,8 @@ export function metadata(body) {
   if (body.includes("thread-diagram")) {
     for (const fence of diagramFences(body)) {
       try {
-        for (const node of parseDiagram(fence.value).nodes) {
-          const link = node.data.link;
+        for (const node of parseDiagram(fence.value).references) {
+          const link = node.link;
           if (["note", "block", "concept"].includes(link?.kind))
             diagramLinks.push(link.noteId);
         }
@@ -22,7 +22,7 @@ export function metadata(body) {
   if (body.includes("thread-mindmap")) {
     for (const fence of diagramFences(body, "thread-mindmap")) {
       try {
-        for (const node of parseMindMap(fence.value).nodes)
+        for (const node of parseMindMap(fence.value).references)
           if (["note", "block", "concept"].includes(node.link?.kind))
             diagramLinks.push(node.link.noteId);
       } catch {

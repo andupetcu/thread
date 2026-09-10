@@ -1,3 +1,4 @@
+import { MAX_DOCUMENT_CHARACTERS } from "../shared/document-limits.mjs";
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
@@ -116,7 +117,7 @@ serveStdio(
           "Create a new note from a title and Markdown body. Always creates a new ID; cannot update or delete existing notes. Retrying creates another note.",
         inputSchema: z.strictObject({
           title: z.string().min(1).max(500),
-          body: z.string().max(2000000),
+          body: z.string().max(MAX_DOCUMENT_CHARACTERS),
         }),
         annotations: {
           readOnlyHint: false,
@@ -137,7 +138,7 @@ serveStdio(
             id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
             baseRevision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
             title: z.string().min(1).max(500).optional(),
-            body: z.string().max(2000000).optional(),
+            body: z.string().max(MAX_DOCUMENT_CHARACTERS).optional(),
           })
           .refine(
             (input) => input.title !== undefined || input.body !== undefined,

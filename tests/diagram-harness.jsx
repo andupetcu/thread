@@ -1,16 +1,29 @@
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { DiagramBlock } from "../src/diagram/DiagramBlock.jsx";
+import DiagramBlock from "../src/diagram/DiagramBlock.jsx";
+import { defaultDiagram } from "../src/diagram/model.js";
 import "../src/style.css";
-import { templateDiagram } from "../src/diagram/model.js";
 function Harness() {
   const [value, setValue] = useState("");
   return (
     <>
-      <DiagramBlock value={value} onChange={setValue} />
+      <DiagramBlock value={value} onChange={setValue} recoveryKey="harness" />
       <button
         id="external-update"
-        onClick={() => setValue(JSON.stringify(templateDiagram("data")))}
+        onClick={() =>
+          setValue(
+            JSON.stringify({
+              ...defaultDiagram(),
+              references: [
+                {
+                  id: "remote",
+                  label: "Remote",
+                  link: { kind: "url", url: "https://example.com" },
+                },
+              ],
+            }),
+          )
+        }
       >
         Simulate external update
       </button>

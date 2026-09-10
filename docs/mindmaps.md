@@ -1,29 +1,21 @@
 # Mind maps
 
-Use **Insert mind map** in the note toolbar or choose **Mind map** from the slash menu. Open **Edit mind map** for a focused fullscreen canvas. Maps belong to their notes, so they use the same local storage, sharing, history and backups as other content. They also work inside OKF documents.
+In ordinary notes, editing keeps visual blocks rendered. Choose **Code edit** in the note editing controls for the complete Markdown source, or edit an individual visual block and choose **Code edit** for that block alone.
 
-## Capture ideas quickly
+Choose **Insert mind map** or `/Mind map`, then **Edit mind map**. Thread opens the native Drawnix canvas fullscreen. Use its mind-map tool, select an idea, and use native keyboard shortcuts such as **Tab** to add a child. Drawnix manages branch layout, text editing, selection, undo/redo, themes, and image tools. **Fit map** brings the content into view, including after resizing to a smaller screen.
 
-Start with a central idea. Select an idea and add a child to develop it, or a sibling for another idea at the same level. **Tab** adds a child and **Enter** adds a sibling when the canvas has focus. Text fields keep their normal editing behavior. Double-click an idea to edit its label.
+## Capture and connect
 
-Choose balanced branches on both sides or a layout extending to the right. Branches arrange automatically. Collapse a branch to reduce clutter; hidden ideas remain in the map and in outline exports. Branch colors help separate themes. Drag an idea onto another idea to change its parent, or use the parent selector. Cycles are rejected.
+Use **Import Markdown** to paste an outline, review it, and replace the current canvas with a native mind map. You can also import and export editable `.drawnix` JSON files. The editor runs locally as part of Thread.
 
-Arrow keys navigate the tree: left selects the parent, right expands a collapsed branch or enters its children, and up/down move between siblings. Undo/redo, duplicate branch, zoom, fit and the minimap help with larger maps. Deleting a branch removes its descendants; the central idea remains the map's root.
+Open **Mind map tools** to add references to ordinary notes, note blocks, OKF documents, entire bundles, or web pages. Selected native elements can be associated with references; the saved preview exposes reference buttons. Note and document references contribute to Thread backlinks. Save or close edits before navigating away.
 
-## Connect ideas to the workspace
+## Save, recover, and export
 
-Select an idea to link it to a note, a note block, an OKF document, an entire knowledge bundle, or a URL. Note/block/OKF document links contribute to the existing note backlinks. Use **Open linked target** or the preview's link actions to follow a reference.
+**Save mind map** writes the native Drawnix document and a PNG preview into the note. Inside an OKF document it updates the concept draft; **Save concept** persists the body and metadata together. Unsaved browser drafts offer explicit recovery, and changed saved content requires conflict review.
 
-A link keeps the referenced content in its original location; the map does not copy or merge that content. Renaming a linked note keeps its ID-based reference intact.
+Export native `.drawnix` or PNG from the editor. Portable note and OKF ZIP exports retain editable `.drawnix`, the Thread reference envelope, and a saved PNG preview when available. References to included OKF content become relative addresses; excluded targets are reported. Workspace backups retain the complete original note source.
 
-## Import, export and saving
+Mind maps use the existing local workspace's sharing, permissions, history, and backups. MCP note tools can read and author the native fenced source.
 
-Paste an indented Markdown outline to turn existing ideas into a tree. Review it before replacing the current map. Outline export includes collapsed branches. Native JSON retains the editable tree, links and display choices; SVG and PNG provide rendered copies.
-
-For portable packages, use the note's **Markdown + assets ZIP** or a bundle's portable ZIP export. These include editable mind-map JSON and a PNG preview. Included OKF references become relative file links; references to excluded content are reported and retained. Native workspace backups preserve the original note source.
-
-**Save mind map** writes the block back to the note. Inside an OKF document it updates the concept draft; use **Save concept** to persist body and metadata together. Unsaved maps have browser draft recovery and conflict checks. Recovery never silently replaces newer saved content, and clearing browser data removes these unsaved drafts.
-
-Maps are stored in fenced `thread-mindmap` JSON blocks, with up to 300 ideas and 1 MB of JSON. The semantic parent/child tree is stored separately from its derived screen positions. Ordinary Markdown and block editing preserve the native map data.
-
-The canvas uses the existing [React Flow](https://reactflow.dev/learn/tutorials/mind-map-app-with-react-flow) dependency. Existing MCP note tools can read, create and edit native mind-map blocks as Markdown; the structured diagram proposal tools continue to address diagram blocks specifically.
+The `thread-mindmap` fence stores a version-2 envelope with `engine:"drawnix"`, native `elements`, optional viewport/theme/PNG preview, and Thread references. This directly replaces the previous custom tree format; no conversion layer is included. Drawnix and its compatible Plait dependencies are pinned in the package lockfile.

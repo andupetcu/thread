@@ -16,7 +16,7 @@ export function clearPersistedDiagramDrafts(noteId, body, storage) {
     const key = `thread-diagram-draft:${diagramRecoveryId(noteId, fence, fences)}`;
     try {
       const raw = storage.getItem(key);
-      if (!raw || raw.length > 1200000) continue;
+      if (!raw || raw.length > 25000000) continue;
       const draft = JSON.parse(raw);
       if (
         JSON.stringify(parseDiagram(draft.diagram)) ===

@@ -56,12 +56,27 @@ export function registerDiagramTools(server, request) {
     "propose_diagram_update",
     {
       description:
-        "Create an inert diagram proposal for authenticated human visual review. Does not apply changes or verify OKF content. Read first; stale revisions require a fresh read and proposal.",
+        "Create an inert native draw.io diagram proposal (version 3, engine drawio, uncompressed mxGraphModel/mxfile XML and a separate Thread references list; PNG preview optional) for authenticated human visual review. Does not apply changes or verify OKF content. Read first; stale revisions require a fresh read and proposal.",
       inputSchema: z.strictObject({
         noteId,
         diagramIndex,
         baseRevision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-        diagram: z.record(z.string(), z.unknown()),
+        diagram: z.strictObject({
+          version: z.literal(3),
+          engine: z.literal("drawio"),
+          xml: z.string().min(1).max(4000000),
+          preview: z.string().max(8000000).optional(),
+          references: z
+            .array(
+              z.strictObject({
+                id: z.string().min(1).max(200),
+                label: z.string().max(2000),
+                elementId: z.string().min(1).max(200).optional(),
+                link: z.record(z.string(), z.unknown()),
+              }),
+            )
+            .max(2000),
+        }),
         summary: z.string().min(1).max(2000),
       }),
       annotations: {

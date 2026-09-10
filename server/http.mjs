@@ -1,3 +1,7 @@
+import {
+  MAX_DOCUMENT_CHARACTERS,
+  MAX_JSON_REQUEST_BYTES,
+} from "../shared/document-limits.mjs";
 import { handleDiagrams } from "./diagram-http.mjs";
 import http from "node:http";
 import { handleOkf } from "./okf-http.mjs";
@@ -7,7 +11,7 @@ import path from "node:path";
 import { WorkspaceStore, StoreError } from "./store.mjs";
 import { Accounts, publicUser } from "./auth.mjs";
 export { passwordRecord } from "./auth.mjs";
-async function readBody(req, limit = 5_000_000) {
+async function readBody(req, limit = MAX_JSON_REQUEST_BYTES) {
   const buffers = [];
   let size = 0;
   for await (const chunk of req) {
@@ -47,6 +51,13 @@ export function createServer({ dir, staticDir = path.resolve("dist") } = {}) {
       if (!url.pathname.startsWith("/api/")) {
         if (!["GET", "HEAD"].includes(req.method) || !staticDir)
           throw new StoreError("Not found.", 404);
+        if (url.pathname.startsWith("/vendor/drawio/")) {
+          res.setHeader("X-Frame-Options", "SAMEORIGIN");
+          res.setHeader(
+            "Content-Security-Policy",
+            "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; frame-src 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'self'",
+          );
+        }
         const resolved = path.resolve(
           staticDir,
           "." + decodeURIComponent(url.pathname),
@@ -185,7 +196,8 @@ export function createServer({ dir, staticDir = path.resolve("dist") } = {}) {
                 !input.title.trim() ||
                 input.title.length > 500)) ||
             (input.body !== undefined &&
-              (typeof input.body !== "string" || input.body.length > 2000000))
+              (typeof input.body !== "string" ||
+                input.body.length > MAX_DOCUMENT_CHARACTERS))
           )
             throw new StoreError(
               "Provide title and/or body with the baseRevision from read_note. No other fields may be changed.",

@@ -4,7 +4,8 @@ import {
   diagramRecoveryId,
 } from "../src/diagram/recovery.js";
 import { diagramFences } from "../src/diagram/note-diagrams.js";
-const empty = { version: 2, nodes: [], edges: [] };
+import { defaultDiagram } from "../src/diagram/model.js";
+const empty = defaultDiagram();
 const fence = (d) => "```thread-diagram\n" + JSON.stringify(d) + "\n```";
 it("distinguishes multiple diagrams under an inherited block marker", () => {
   const body =
@@ -18,13 +19,7 @@ it("clears only matching persisted recovery and preserves a different tab draft 
   const body = fence(empty) + "\n\n" + fence(empty);
   const different = {
     ...empty,
-    nodes: [
-      {
-        id: "a",
-        position: { x: 0, y: 0 },
-        data: { shape: "process", label: "unsaved", color: "#ffffff" },
-      },
-    ],
+    xml: empty.xml.replace('id="0"', 'id="0" value="unsaved"'),
   };
   const saved = "thread-diagram-draft:note:diagram-0",
     pending = "thread-diagram-draft:note:diagram-1";

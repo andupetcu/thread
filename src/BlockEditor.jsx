@@ -389,7 +389,11 @@ export default function BlockEditor({
                   aria-pressed={mode === "source"}
                   onClick={() => setMode("source")}
                 >
-                  Source
+                  {/^\s*(`{3,}|~{3,})thread-(?:diagram|mindmap)/.test(
+                    active.draft,
+                  )
+                    ? "Code edit"
+                    : "Source"}
                 </button>
               </div>
               {mode === "source" && richFallbackReason(active.draft) && (
