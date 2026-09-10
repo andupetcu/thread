@@ -31,7 +31,7 @@ it("includes diagram source and PNG previews while retaining editable fenced JSO
   );
   expect(
     JSON.parse(new TextDecoder().decode(files["diagrams/diagram-1.json"])),
-  ).toEqual(diagram);
+  ).toEqual({ ...diagram, version: 2 });
   expect(files["diagrams/diagram-1.png"]).toEqual(
     new Uint8Array([137, 80, 78, 71]),
   );

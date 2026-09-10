@@ -1,6 +1,7 @@
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   lazy,
@@ -12,6 +13,7 @@ import {
   Plus,
   FileText,
   Network,
+  GitBranch,
   Table2,
   PanelLeft,
   PanelRight,
@@ -38,6 +40,7 @@ import {
 } from "lucide-react";
 import Render, { EditContext } from "./Render";
 import NoteAttachments from "./NoteAttachments";
+import { DiagramWorkspaceContext } from "./diagram/context.js";
 import NotebookTools, {
   NoteLocation,
   orderedTree,
@@ -49,6 +52,7 @@ import WorkspaceSettings, {
 } from "./storage/WorkspaceSettings";
 import { api } from "./storage/api";
 import { defaultDiagram } from "./diagram/model";
+import { defaultMindMap } from "./mindmap/model.js";
 const GraphView = lazy(() => import("./workspace/GraphView"));
 const NoteTable = lazy(() => import("./workspace/NoteTable"));
 const DiffView = lazy(() => import("./workspace/DiffView"));
@@ -96,6 +100,18 @@ function App({ workspace, onLock }) {
     });
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [linkedBundles, setLinkedBundles] = useState([]);
+  useEffect(() => {
+    let active = true;
+    api("/okf/bundles")
+      .then((data) => {
+        if (active) setLinkedBundles(data.bundles || []);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [workspace.revision]);
   const [notebook, setNotebook] = useState("");
   const [searchIds, setSearchIds] = useState(null);
   const [listLimit, setListLimit] = useState(200);
@@ -129,6 +145,7 @@ function App({ workspace, onLock }) {
     [activePanel, setActivePanel] = useState(0);
   const [bundleId, setBundleId] = useState("");
   const [bundleName, setBundleName] = useState("");
+  const [diagramBundleTarget, setDiagramBundleTarget] = useState(null);
   const [bundleDirty, setBundleDirty] = useState(false);
   const [bundleBusy, setBundleBusy] = useState(false);
   const canLeaveBundle = () =>
@@ -416,716 +433,763 @@ function App({ workspace, onLock }) {
   };
   return (
     <Suspense fallback={<div className="workspace-gate">Opening editor…</div>}>
-      <EditContext.Provider value={update}>
-        <div
-          className={
-            "app " + (focus ? "focus " : "") + (!sidebar ? "collapsed" : "")
-          }
-        >
-          {!focus && sidebar && (
-            <aside className="sidebar">
-              <div className="brand">
-                <div className="brand-icon">
-                  <Network size={23} />
-                </div>
-                <strong>
-                  thread<span> / local</span>
-                </strong>
-                <span className="version">β</span>
-              </div>
-              <div className="workspace">
-                <div className="avatar">A</div>
-                <div>
-                  Personal workspace<small>On this device</small>
-                </div>
-                <ChevronRight size={14} />
-              </div>
-              <label className="search">
-                <Search size={16} />
-                <input
-                  ref={searchRef}
-                  placeholder="Search anything…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-                <kbd>⌘ K</kbd>
-              </label>
-              <nav>
-                {[
-                  ["notes", FileText, "All notes"],
-                  ["graph", Network, "Graph view"],
-                  ["table", Table2, "Table view"],
-                ].map(([v, I, label]) => (
-                  <Button
-                    key={v}
-                    icon={I}
-                    title={label}
-                    className={view === v ? "selected" : ""}
-                    onClick={() => {
-                      if (canLeaveBundle()) setView(v);
-                    }}
-                  >
-                    {label}
-                    <span>
-                      {v === "notes" ? notes.length : v === "graph" ? "⌘" : ""}
-                    </span>
-                  </Button>
-                ))}
-              </nav>
-              <NotebookTools
-                workspace={workspace}
-                value={notebook}
-                onChange={setNotebook}
-                onError={setError}
-              />
-              <BundleSidebar
-                workspaceRevision={workspace.revision}
-                notes={notes.filter((note) => !note.okf)}
-                activeId={view === "bundle" ? bundleId : ""}
-                onError={setError}
-                onOpen={(id) => {
-                  if (!canLeaveBundle()) return;
-                  setBundleId(id);
-                  setView("bundle");
-                  setCompare(false);
-                }}
-              />
-              <div className="section-label">
-                Workspace{" "}
-                <Button icon={Plus} title="New note" onClick={create} />
-              </div>
-              <div className="note-list">
-                {orderedTree(
-                  [...visible].sort(
-                    (a, b) => Number(!!b.pinned) - Number(!!a.pinned),
-                  ),
-                )
-                  .slice(0, listLimit)
-                  .map((n) => (
-                    <button
-                      key={n.id}
-                      style={{
-                        paddingLeft: 12 + Math.min(n.treeDepth, 12) * 14,
-                      }}
-                      className={
-                        "note-link " +
-                        (panels.includes(n.id) && view === "notes"
-                          ? "active"
-                          : "")
-                      }
-                      onClick={() => open(n.id)}
-                    >
-                      <FileText size={15} />
-                      <span>{n.title || "Untitled note"}</span>
-                      {n.pinned && <Pin size={12} />}
-                    </button>
-                  ))}
-                {visible.length > listLimit && (
-                  <button onClick={() => setListLimit((n) => n + 200)}>
-                    Show more notes ({visible.length - listLimit})
-                  </button>
-                )}
-                {!visible.length && (
-                  <p className="empty-small">No matching notes.</p>
-                )}
-              </div>
-              <div className="section-label">
-                Tags <span>{tags.length}</span>
-              </div>
-              <div className="tag-list">
-                {tags.map((t) => (
-                  <button
-                    key={t}
-                    className={tag === t ? "active" : ""}
-                    onClick={() => setTag(tag === t ? "" : t)}
-                  >
-                    <Hash size={13} />
-                    {t}
-                    <span>
-                      {
-                        notes.filter((n) => metadata(n.body).tags.includes(t))
-                          .length
-                      }
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="sidebar-bottom">
-                <div className="local-status">
-                  <span />
-                  Local workspace <small>{workspace.status}</small>
-                </div>
-                <div className="bottom-actions">
-                  <Button
-                    icon={RotateCcw}
-                    title="Download recovery data"
-                    onClick={() => {
-                      try {
-                        const raw = localStorage.getItem(KEY + ".recovery");
-                        if (raw)
-                          download(
-                            new Blob([raw], { type: "text/plain" }),
-                            "thread-recovery.txt",
-                          );
-                        else
-                          setToast(
-                            "No damaged storage recovery copy is present.",
-                          );
-                      } catch {
-                        setError("Storage cannot be accessed.");
-                      }
-                    }}
-                  />
-
-                  {workspace.user?.role === "admin" && (
-                    <Button
-                      icon={Download}
-                      title="Backup workspace"
-                      onClick={async () => {
-                        try {
-                          await workspace.flush();
-                          download(
-                            await api("/backup"),
-                            "thread-workspace.zip",
-                          );
-                        } catch (e) {
-                          setError(e.message);
-                        }
-                      }}
-                    >
-                      Backup
-                    </Button>
-                  )}
-                  <Button
-                    icon={Upload}
-                    title="Import notes"
-                    onClick={() => fileRef.current.click()}
-                  >
-                    Import
-                  </Button>
-                  <select
-                    aria-label="Color theme"
-                    value={theme}
-                    onChange={(e) => setTheme(e.target.value)}
-                  >
-                    <option value="dark">Dark</option>
-                    <option value="light">Light</option>
-                    <option value="system">System</option>
-                  </select>
-                </div>
-              </div>
-            </aside>
-          )}
-          <main>
-            <header className="topbar">
-              <div>
-                <Button
-                  icon={focus ? Minimize2 : PanelLeft}
-                  title={focus ? "Exit focus" : "Toggle sidebar"}
-                  onClick={() =>
-                    focus ? setFocus(false) : setSidebar((p) => !p)
-                  }
-                />
-                <span className="breadcrumb">
-                  Workspace <ChevronRight size={12} />{" "}
+      <DiagramWorkspaceContext.Provider
+        value={{
+          notes: workspaceNotes,
+          bundles: linkedBundles,
+          onOpenBundle: (id) => {
+            if (!canLeaveBundle()) return;
+            setDiagramBundleTarget(null);
+            setBundleId(id);
+            setView("bundle");
+            setCompare(false);
+          },
+          flush: workspace.flush,
+          beforeProposalApply: async () => {
+            if (bundleDirty || bundleBusy)
+              throw new Error(
+                "Save the knowledge bundle draft before applying a diagram proposal.",
+              );
+            await workspace.flush();
+          },
+          onProposalApplied: () => workspace.reload(),
+          onOpenNote: (id, blockId) => {
+            const target = workspaceNotes.find((item) => item.id === id);
+            if (target?.okf) {
+              if (!canLeaveBundle()) return;
+              setDiagramBundleTarget({
+                noteId: id,
+                blockId,
+                request: Date.now(),
+              });
+              setBundleId(target.okf.bundleId);
+              setView("bundle");
+              setCompare(false);
+            } else open(id, 0, blockId);
+          },
+        }}
+      >
+        <EditContext.Provider value={update}>
+          <div
+            className={
+              "app " + (focus ? "focus " : "") + (!sidebar ? "collapsed" : "")
+            }
+          >
+            {!focus && sidebar && (
+              <aside className="sidebar">
+                <div className="brand">
+                  <div className="brand-icon">
+                    <Network size={23} />
+                  </div>
                   <strong>
-                    {view === "notes"
-                      ? "Notes"
-                      : view === "graph"
-                        ? "Knowledge graph"
-                        : view === "bundle"
-                          ? bundleName || "Knowledge bundle"
-                          : "All notes"}
+                    thread<span> / local</span>
                   </strong>
-                </span>
-              </div>
-              <div className="top-actions">
-                <span className="saved">
-                  <Check size={13} />
-                  {workspace.status}
-                </span>
-                {view !== "bundle" && (
-                  <Button icon={Plus} onClick={create}>
-                    New note
-                  </Button>
-                )}
-              </div>
-            </header>
-            {error && (
-              <div className="error" role="alert">
-                {error}
-                <button onClick={() => setError("")}>Dismiss</button>
-              </div>
-            )}
-            <div className="viewbar">
-              <div className="view-title">
-                {view === "notes" ? (
-                  <>
-                    <FileText size={16} />
-                    {active?.title || "Notes"}
-                    <span className="file-ext">.md</span>
-                  </>
-                ) : (
-                  <>
-                    <Network size={17} />
-                    {view === "graph"
-                      ? "Your connected thinking"
-                      : view === "bundle"
-                        ? bundleName || "Knowledge bundle"
-                        : "Note database"}
-                  </>
-                )}
-              </div>
-              <div className="view-controls">
-                {view === "notes" && (
-                  <Button
-                    title="Toggle document context"
-                    icon={PanelRight}
-                    className={contextOpen ? "active" : ""}
-                    onClick={() => setContextOpen((p) => !p)}
+                  <span className="version">β</span>
+                </div>
+                <div className="workspace">
+                  <div className="avatar">A</div>
+                  <div>
+                    Personal workspace<small>On this device</small>
+                  </div>
+                  <ChevronRight size={14} />
+                </div>
+                <label className="search">
+                  <Search size={16} />
+                  <input
+                    ref={searchRef}
+                    placeholder="Search anything…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
                   />
-                )}
-                <Button
-                  icon={Settings2}
-                  title="Workspace settings"
-                  onClick={() => setSettingsOpen(true)}
-                />
-                <button
-                  onClick={() => onLock().catch((e) => setError(e.message))}
-                >
-                  Lock
-                </button>
-                <Button
-                  icon={Settings2}
-                  title="Search filters"
-                  className={filters ? "active" : ""}
-                  onClick={() => setFilters((p) => !p)}
-                />
-                {view === "notes" && (
-                  <>
-                    <div className="panel-switch">
-                      {[1, 2, 3].map((n) => (
-                        <button
-                          key={n}
-                          aria-label={`${n} panels`}
-                          className={panels.length === n ? "active" : ""}
-                          onClick={() => panelCount(n)}
-                        >
-                          {Array.from({ length: n }, (_, i) => (
-                            <i key={i} />
-                          ))}
-                        </button>
-                      ))}
-                    </div>
+                  <kbd>⌘ K</kbd>
+                </label>
+                <nav>
+                  {[
+                    ["notes", FileText, "All notes"],
+                    ["graph", Network, "Graph view"],
+                    ["table", Table2, "Table view"],
+                  ].map(([v, I, label]) => (
                     <Button
-                      icon={GitCompare}
-                      title="Compare notes"
-                      disabled={panels.length < 2}
-                      className={compare ? "active" : ""}
-                      onClick={() => setCompare((p) => !p)}
-                    />
-                    <Button
-                      icon={Maximize2}
-                      title="Focus mode"
-                      onClick={() => setFocus((p) => !p)}
-                    />
-                  </>
-                )}
-              </div>
-            </div>
-            {(filters || query || tag) && (
-              <div className="filters">
-                <input
-                  aria-label="Search notes"
-                  placeholder="Search title, content, @mentions, #tags"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-                <select
-                  aria-label="Filter tag"
-                  value={tag}
-                  onChange={(e) => setTag(e.target.value)}
-                >
-                  <option value="">All tags</option>
-                  {tags.map((t) => (
-                    <option key={t}>{t}</option>
+                      key={v}
+                      icon={I}
+                      title={label}
+                      className={view === v ? "selected" : ""}
+                      onClick={() => {
+                        if (canLeaveBundle()) setView(v);
+                      }}
+                    >
+                      {label}
+                      <span>
+                        {v === "notes"
+                          ? notes.length
+                          : v === "graph"
+                            ? "⌘"
+                            : ""}
+                      </span>
+                    </Button>
                   ))}
-                </select>
-                <select
-                  aria-label="Date field"
-                  value={dateField}
-                  onChange={(e) => setDateField(e.target.value)}
-                >
-                  <option value="updated">Modified</option>
-                  <option value="created">Created</option>
-                </select>
-                <label>
-                  From
-                  <input
-                    aria-label="From date and hour"
-                    type="datetime-local"
-                    value={from}
-                    onChange={(e) => setFrom(e.target.value)}
-                  />
-                </label>
-                <label>
-                  To
-                  <input
-                    aria-label="To date and hour"
-                    type="datetime-local"
-                    value={to}
-                    onChange={(e) => setTo(e.target.value)}
-                  />
-                </label>
-                <Button
-                  title="Clear filters"
-                  icon={X}
-                  onClick={() => {
-                    setQuery("");
-                    setTag("");
-                    setFrom("");
-                    setTo("");
+                </nav>
+                <NotebookTools
+                  workspace={workspace}
+                  value={notebook}
+                  onChange={setNotebook}
+                  onError={setError}
+                />
+                <BundleSidebar
+                  workspaceRevision={workspace.revision}
+                  notes={notes.filter((note) => !note.okf)}
+                  activeId={view === "bundle" ? bundleId : ""}
+                  onError={setError}
+                  onOpen={(id) => {
+                    if (!canLeaveBundle()) return;
+                    setBundleId(id);
+                    setView("bundle");
+                    setCompare(false);
                   }}
                 />
-                <small>{visible.length} results</small>
-              </div>
-            )}
-            {view === "notes" && (
-              <div
-                className="workspace-tabs"
-                role="tablist"
-                aria-label="Open notes"
-              >
-                {tabs
-                  .filter((id) => notes.some((n) => n.id === id))
-                  .map((id) => (
-                    <div
-                      key={id}
-                      className={
-                        "workspace-tab " + (panels.includes(id) ? "active" : "")
-                      }
-                    >
+                <div className="section-label">
+                  Workspace{" "}
+                  <Button icon={Plus} title="New note" onClick={create} />
+                </div>
+                <div className="note-list">
+                  {orderedTree(
+                    [...visible].sort(
+                      (a, b) => Number(!!b.pinned) - Number(!!a.pinned),
+                    ),
+                  )
+                    .slice(0, listLimit)
+                    .map((n) => (
                       <button
-                        role="tab"
-                        aria-selected={contextNote?.id === id}
-                        tabIndex={contextNote?.id === id ? 0 : -1}
-                        onKeyDown={(e) => {
-                          if (
-                            ["ArrowLeft", "ArrowRight", "Home", "End"].includes(
-                              e.key,
-                            )
-                          ) {
-                            e.preventDefault();
-                            const items = [
-                                ...e.currentTarget
-                                  .closest("[role=tablist]")
-                                  .querySelectorAll("[role=tab]"),
-                              ],
-                              i = items.indexOf(e.currentTarget),
-                              next =
-                                e.key === "Home"
-                                  ? 0
-                                  : e.key === "End"
-                                    ? items.length - 1
-                                    : (i +
-                                        (e.key === "ArrowRight" ? 1 : -1) +
-                                        items.length) %
-                                      items.length;
-                            items[next]?.click();
-                            items[next]?.focus();
+                        key={n.id}
+                        style={{
+                          paddingLeft: 12 + Math.min(n.treeDepth, 12) * 14,
+                        }}
+                        className={
+                          "note-link " +
+                          (panels.includes(n.id) && view === "notes"
+                            ? "active"
+                            : "")
+                        }
+                        onClick={() => open(n.id)}
+                      >
+                        <FileText size={15} />
+                        <span>{n.title || "Untitled note"}</span>
+                        {n.pinned && <Pin size={12} />}
+                      </button>
+                    ))}
+                  {visible.length > listLimit && (
+                    <button onClick={() => setListLimit((n) => n + 200)}>
+                      Show more notes ({visible.length - listLimit})
+                    </button>
+                  )}
+                  {!visible.length && (
+                    <p className="empty-small">No matching notes.</p>
+                  )}
+                </div>
+                <div className="section-label">
+                  Tags <span>{tags.length}</span>
+                </div>
+                <div className="tag-list">
+                  {tags.map((t) => (
+                    <button
+                      key={t}
+                      className={tag === t ? "active" : ""}
+                      onClick={() => setTag(tag === t ? "" : t)}
+                    >
+                      <Hash size={13} />
+                      {t}
+                      <span>
+                        {
+                          notes.filter((n) => metadata(n.body).tags.includes(t))
+                            .length
+                        }
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="sidebar-bottom">
+                  <div className="local-status">
+                    <span />
+                    Local workspace <small>{workspace.status}</small>
+                  </div>
+                  <div className="bottom-actions">
+                    <Button
+                      icon={RotateCcw}
+                      title="Download recovery data"
+                      onClick={() => {
+                        try {
+                          const raw = localStorage.getItem(KEY + ".recovery");
+                          if (raw)
+                            download(
+                              new Blob([raw], { type: "text/plain" }),
+                              "thread-recovery.txt",
+                            );
+                          else
+                            setToast(
+                              "No damaged storage recovery copy is present.",
+                            );
+                        } catch {
+                          setError("Storage cannot be accessed.");
+                        }
+                      }}
+                    />
+
+                    {workspace.user?.role === "admin" && (
+                      <Button
+                        icon={Download}
+                        title="Backup workspace"
+                        onClick={async () => {
+                          try {
+                            await workspace.flush();
+                            download(
+                              await api("/backup"),
+                              "thread-workspace.zip",
+                            );
+                          } catch (e) {
+                            setError(e.message);
                           }
                         }}
-                        onClick={() => open(id, contextIndex)}
                       >
-                        {notes.find((n) => n.id === id)?.title}
-                      </button>
-                      <button
-                        aria-label={
-                          "Close tab " + notes.find((n) => n.id === id)?.title
-                        }
-                        onClick={() => {
-                          const remaining = tabs.filter((t) => t !== id);
-                          setTabs(remaining);
-                          setPanels((p) =>
-                            p
-                              .map((n) => (n === id ? remaining.at(-1) : n))
-                              .filter(Boolean),
-                          );
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-              </div>
-            )}
-            {view === "bundle" ? (
-              <BundleWorkspace
-                bundleId={bundleId}
-                workspaceRevision={workspace.revision}
-                notes={notes}
-                onError={setError}
-                onBundleName={setBundleName}
-                onDirtyChange={setBundleDirty}
-                onBusyChange={setBundleBusy}
-                onOpenNote={open}
-              />
-            ) : view === "notes" ? (
-              notes.length ? (
-                <>
-                  {!panels.length && (
-                    <div className="empty">
-                      <h2>Choose a note from the sidebar</h2>
-                      <button onClick={create}>Create a note</button>
-                    </div>
-                  )}
-                  <div className="document-layout">
-                    <div className="panes">
-                      {panels.map((id, i) => {
-                        const n = notes.find((n) => n.id === id);
-                        return (
-                          n && (
-                            <React.Fragment key={i + id}>
-                              {i > 0 && (
-                                <div
-                                  role="separator"
-                                  aria-label={
-                                    "Resize panels " + i + " and " + (i + 1)
-                                  }
-                                  aria-orientation="vertical"
-                                  aria-valuenow={Math.round(
-                                    widths[i - 1] * 100,
-                                  )}
-                                  tabIndex={0}
-                                  className="pane-resizer"
-                                  onKeyDown={(e) => {
-                                    if (
-                                      ["ArrowLeft", "ArrowRight"].includes(
-                                        e.key,
-                                      )
-                                    ) {
-                                      e.preventDefault();
-                                      setWidths((p) => {
-                                        const next = [...p];
-                                        next[i - 1] = Math.max(
-                                          0.3,
-                                          next[i - 1] +
-                                            (e.key === "ArrowLeft"
-                                              ? -0.1
-                                              : 0.1),
-                                        );
-                                        return next;
-                                      });
-                                    }
-                                  }}
-                                  onPointerDown={(e) => {
-                                    e.currentTarget.setPointerCapture(
-                                      e.pointerId,
-                                    );
-                                    const start = e.clientX,
-                                      initial = [...widths],
-                                      total =
-                                        e.currentTarget.parentElement
-                                          .clientWidth;
-                                    e.currentTarget.onpointermove = (ev) => {
-                                      const delta =
-                                        ((ev.clientX - start) / total) *
-                                        panels.length;
-                                      setWidths((p) => {
-                                        const next = [...initial];
-                                        next[i - 1] = Math.max(
-                                          0.3,
-                                          initial[i - 1] + delta,
-                                        );
-                                        next[i] = Math.max(
-                                          0.3,
-                                          initial[i] - delta,
-                                        );
-                                        return next;
-                                      });
-                                    };
-                                    e.currentTarget.onpointerup = (ev) => {
-                                      ev.currentTarget.onpointermove = null;
-                                    };
-                                  }}
-                                />
-                              )}
-                              <NotePane
-                                width={widths[i] || 1}
-                                notebooks={workspace.notebooks}
-                                note={n}
-                                notes={notes}
-                                index={i}
-                                onActivate={() => setActivePanel(i)}
-                                update={update}
-                                open={(id, _index, blockId) =>
-                                  open(id, i, blockId)
-                                }
-                                exportNote={exportNote}
-                                tags={tags}
-                                remove={
-                                  workspace.user?.role === "admin"
-                                    ? () => {
-                                        setTrash(n);
-                                        setNotes((p) =>
-                                          p.filter((x) => x.id !== id),
-                                        );
-                                        setPanels((p) =>
-                                          p
-                                            .map((x) =>
-                                              x === id
-                                                ? notes.find((y) => y.id !== id)
-                                                    ?.id
-                                                : x,
-                                            )
-                                            .filter(Boolean),
-                                        );
-                                      }
-                                    : undefined
-                                }
-                              />
-                            </React.Fragment>
-                          )
-                        );
-                      })}
-                    </div>
-                    {contextOpen && !focus && contextNote && (
-                      <ContextPanel
-                        note={contextNote}
-                        notes={notes}
-                        onClose={() => setContextOpen(false)}
-                        jump={jumpToHeading}
-                        open={(id) => open(id, contextIndex)}
-                        openBeside={openBeside}
-                      />
+                        Backup
+                      </Button>
                     )}
+                    <Button
+                      icon={Upload}
+                      title="Import notes"
+                      onClick={() => fileRef.current.click()}
+                    >
+                      Import
+                    </Button>
+                    <select
+                      aria-label="Color theme"
+                      value={theme}
+                      onChange={(e) => setTheme(e.target.value)}
+                    >
+                      <option value="dark">Dark</option>
+                      <option value="light">Light</option>
+                      <option value="system">System</option>
+                    </select>
                   </div>
-                  {compare && (
-                    <DiffView
-                      notes={panels
-                        .map((id) => notes.find((n) => n.id === id))
-                        .filter(Boolean)}
-                      onClose={() => setCompare(false)}
+                </div>
+              </aside>
+            )}
+            <main>
+              <header className="topbar">
+                <div>
+                  <Button
+                    icon={focus ? Minimize2 : PanelLeft}
+                    title={focus ? "Exit focus" : "Toggle sidebar"}
+                    onClick={() =>
+                      focus ? setFocus(false) : setSidebar((p) => !p)
+                    }
+                  />
+                  <span className="breadcrumb">
+                    Workspace <ChevronRight size={12} />{" "}
+                    <strong>
+                      {view === "notes"
+                        ? "Notes"
+                        : view === "graph"
+                          ? "Knowledge graph"
+                          : view === "bundle"
+                            ? bundleName || "Knowledge bundle"
+                            : "All notes"}
+                    </strong>
+                  </span>
+                </div>
+                <div className="top-actions">
+                  <span className="saved">
+                    <Check size={13} />
+                    {workspace.status}
+                  </span>
+                  {view !== "bundle" && (
+                    <Button icon={Plus} onClick={create}>
+                      New note
+                    </Button>
+                  )}
+                </div>
+              </header>
+              {error && (
+                <div className="error" role="alert">
+                  {error}
+                  <button onClick={() => setError("")}>Dismiss</button>
+                </div>
+              )}
+              <div className="viewbar">
+                <div className="view-title">
+                  {view === "notes" ? (
+                    <>
+                      <FileText size={16} />
+                      {active?.title || "Notes"}
+                      <span className="file-ext">.md</span>
+                    </>
+                  ) : (
+                    <>
+                      <Network size={17} />
+                      {view === "graph"
+                        ? "Your connected thinking"
+                        : view === "bundle"
+                          ? bundleName || "Knowledge bundle"
+                          : "Note database"}
+                    </>
+                  )}
+                </div>
+                <div className="view-controls">
+                  {view === "notes" && (
+                    <Button
+                      title="Toggle document context"
+                      icon={PanelRight}
+                      className={contextOpen ? "active" : ""}
+                      onClick={() => setContextOpen((p) => !p)}
                     />
                   )}
-                </>
-              ) : (
-                <div className="empty">
-                  <FileText size={40} />
-                  <h2>Your next idea starts here.</h2>
-                  <Button icon={Plus} onClick={create}>
-                    Create a note
-                  </Button>
+                  <Button
+                    icon={Settings2}
+                    title="Workspace settings"
+                    onClick={() => setSettingsOpen(true)}
+                  />
+                  <button
+                    onClick={() => onLock().catch((e) => setError(e.message))}
+                  >
+                    Lock
+                  </button>
+                  <Button
+                    icon={Settings2}
+                    title="Search filters"
+                    className={filters ? "active" : ""}
+                    onClick={() => setFilters((p) => !p)}
+                  />
+                  {view === "notes" && (
+                    <>
+                      <div className="panel-switch">
+                        {[1, 2, 3].map((n) => (
+                          <button
+                            key={n}
+                            aria-label={`${n} panels`}
+                            className={panels.length === n ? "active" : ""}
+                            onClick={() => panelCount(n)}
+                          >
+                            {Array.from({ length: n }, (_, i) => (
+                              <i key={i} />
+                            ))}
+                          </button>
+                        ))}
+                      </div>
+                      <Button
+                        icon={GitCompare}
+                        title="Compare notes"
+                        disabled={panels.length < 2}
+                        className={compare ? "active" : ""}
+                        onClick={() => setCompare((p) => !p)}
+                      />
+                      <Button
+                        icon={Maximize2}
+                        title="Focus mode"
+                        onClick={() => setFocus((p) => !p)}
+                      />
+                    </>
+                  )}
                 </div>
-              )
-            ) : view === "graph" ? (
-              <GraphView
-                notes={visible}
-                open={open}
-                settings={workspace.settings}
-                onSettingsChange={workspace.saveSettings}
-              />
-            ) : (
-              <NoteTable
-                notes={visible}
-                update={update}
-                open={open}
-                settings={workspace.settings}
-                onSettingsChange={workspace.saveSettings}
-              />
-            )}
-            <footer>
-              <span>
-                <span className="status-dot" />
-                Thread local <span className="footer-divider">/</span>{" "}
-                {notes.length} notes · {tags.length} tags
-              </span>
-              <span>
-                <kbd>/</kbd> blocks <kbd>@</kbd> mentions <kbd>#</kbd> tags{" "}
-                <span className="footer-divider">/</span> <kbd>⌘ Enter</kbd>{" "}
-                focus
-              </span>
-            </footer>
-          </main>
-        </div>
-        <input
-          type="file"
-          hidden
-          ref={fileRef}
-          accept=".json,.md"
-          onChange={importFile}
-        />
-        {toast && (
-          <div className="toast" role="status">
-            {toast}
+              </div>
+              {(filters || query || tag) && (
+                <div className="filters">
+                  <input
+                    aria-label="Search notes"
+                    placeholder="Search title, content, @mentions, #tags"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                  <select
+                    aria-label="Filter tag"
+                    value={tag}
+                    onChange={(e) => setTag(e.target.value)}
+                  >
+                    <option value="">All tags</option>
+                    {tags.map((t) => (
+                      <option key={t}>{t}</option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="Date field"
+                    value={dateField}
+                    onChange={(e) => setDateField(e.target.value)}
+                  >
+                    <option value="updated">Modified</option>
+                    <option value="created">Created</option>
+                  </select>
+                  <label>
+                    From
+                    <input
+                      aria-label="From date and hour"
+                      type="datetime-local"
+                      value={from}
+                      onChange={(e) => setFrom(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    To
+                    <input
+                      aria-label="To date and hour"
+                      type="datetime-local"
+                      value={to}
+                      onChange={(e) => setTo(e.target.value)}
+                    />
+                  </label>
+                  <Button
+                    title="Clear filters"
+                    icon={X}
+                    onClick={() => {
+                      setQuery("");
+                      setTag("");
+                      setFrom("");
+                      setTo("");
+                    }}
+                  />
+                  <small>{visible.length} results</small>
+                </div>
+              )}
+              {view === "notes" && (
+                <div
+                  className="workspace-tabs"
+                  role="tablist"
+                  aria-label="Open notes"
+                >
+                  {tabs
+                    .filter((id) => notes.some((n) => n.id === id))
+                    .map((id) => (
+                      <div
+                        key={id}
+                        className={
+                          "workspace-tab " +
+                          (panels.includes(id) ? "active" : "")
+                        }
+                      >
+                        <button
+                          role="tab"
+                          aria-selected={contextNote?.id === id}
+                          tabIndex={contextNote?.id === id ? 0 : -1}
+                          onKeyDown={(e) => {
+                            if (
+                              [
+                                "ArrowLeft",
+                                "ArrowRight",
+                                "Home",
+                                "End",
+                              ].includes(e.key)
+                            ) {
+                              e.preventDefault();
+                              const items = [
+                                  ...e.currentTarget
+                                    .closest("[role=tablist]")
+                                    .querySelectorAll("[role=tab]"),
+                                ],
+                                i = items.indexOf(e.currentTarget),
+                                next =
+                                  e.key === "Home"
+                                    ? 0
+                                    : e.key === "End"
+                                      ? items.length - 1
+                                      : (i +
+                                          (e.key === "ArrowRight" ? 1 : -1) +
+                                          items.length) %
+                                        items.length;
+                              items[next]?.click();
+                              items[next]?.focus();
+                            }
+                          }}
+                          onClick={() => open(id, contextIndex)}
+                        >
+                          {notes.find((n) => n.id === id)?.title}
+                        </button>
+                        <button
+                          aria-label={
+                            "Close tab " + notes.find((n) => n.id === id)?.title
+                          }
+                          onClick={() => {
+                            const remaining = tabs.filter((t) => t !== id);
+                            setTabs(remaining);
+                            setPanels((p) =>
+                              p
+                                .map((n) => (n === id ? remaining.at(-1) : n))
+                                .filter(Boolean),
+                            );
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+              {view === "bundle" ? (
+                <BundleWorkspace
+                  bundleId={bundleId}
+                  navigationTarget={diagramBundleTarget}
+                  workspaceRevision={workspace.revision}
+                  notes={notes}
+                  onError={setError}
+                  onBundleName={setBundleName}
+                  onDirtyChange={setBundleDirty}
+                  onBusyChange={setBundleBusy}
+                  onOpenNote={open}
+                />
+              ) : view === "notes" ? (
+                notes.length ? (
+                  <>
+                    {!panels.length && (
+                      <div className="empty">
+                        <h2>Choose a note from the sidebar</h2>
+                        <button onClick={create}>Create a note</button>
+                      </div>
+                    )}
+                    <div className="document-layout">
+                      <div className="panes">
+                        {panels.map((id, i) => {
+                          const n = notes.find((n) => n.id === id);
+                          return (
+                            n && (
+                              <React.Fragment key={i + id}>
+                                {i > 0 && (
+                                  <div
+                                    role="separator"
+                                    aria-label={
+                                      "Resize panels " + i + " and " + (i + 1)
+                                    }
+                                    aria-orientation="vertical"
+                                    aria-valuenow={Math.round(
+                                      widths[i - 1] * 100,
+                                    )}
+                                    tabIndex={0}
+                                    className="pane-resizer"
+                                    onKeyDown={(e) => {
+                                      if (
+                                        ["ArrowLeft", "ArrowRight"].includes(
+                                          e.key,
+                                        )
+                                      ) {
+                                        e.preventDefault();
+                                        setWidths((p) => {
+                                          const next = [...p];
+                                          next[i - 1] = Math.max(
+                                            0.3,
+                                            next[i - 1] +
+                                              (e.key === "ArrowLeft"
+                                                ? -0.1
+                                                : 0.1),
+                                          );
+                                          return next;
+                                        });
+                                      }
+                                    }}
+                                    onPointerDown={(e) => {
+                                      e.currentTarget.setPointerCapture(
+                                        e.pointerId,
+                                      );
+                                      const start = e.clientX,
+                                        initial = [...widths],
+                                        total =
+                                          e.currentTarget.parentElement
+                                            .clientWidth;
+                                      e.currentTarget.onpointermove = (ev) => {
+                                        const delta =
+                                          ((ev.clientX - start) / total) *
+                                          panels.length;
+                                        setWidths((p) => {
+                                          const next = [...initial];
+                                          next[i - 1] = Math.max(
+                                            0.3,
+                                            initial[i - 1] + delta,
+                                          );
+                                          next[i] = Math.max(
+                                            0.3,
+                                            initial[i] - delta,
+                                          );
+                                          return next;
+                                        });
+                                      };
+                                      e.currentTarget.onpointerup = (ev) => {
+                                        ev.currentTarget.onpointermove = null;
+                                      };
+                                    }}
+                                  />
+                                )}
+                                <NotePane
+                                  width={widths[i] || 1}
+                                  notebooks={workspace.notebooks}
+                                  note={n}
+                                  notes={notes}
+                                  index={i}
+                                  onActivate={() => setActivePanel(i)}
+                                  update={update}
+                                  open={(id, _index, blockId) =>
+                                    open(id, i, blockId)
+                                  }
+                                  exportNote={exportNote}
+                                  tags={tags}
+                                  remove={
+                                    workspace.user?.role === "admin"
+                                      ? () => {
+                                          setTrash(n);
+                                          setNotes((p) =>
+                                            p.filter((x) => x.id !== id),
+                                          );
+                                          setPanels((p) =>
+                                            p
+                                              .map((x) =>
+                                                x === id
+                                                  ? notes.find(
+                                                      (y) => y.id !== id,
+                                                    )?.id
+                                                  : x,
+                                              )
+                                              .filter(Boolean),
+                                          );
+                                        }
+                                      : undefined
+                                  }
+                                />
+                              </React.Fragment>
+                            )
+                          );
+                        })}
+                      </div>
+                      {contextOpen && !focus && contextNote && (
+                        <ContextPanel
+                          note={contextNote}
+                          notes={notes}
+                          onClose={() => setContextOpen(false)}
+                          jump={jumpToHeading}
+                          open={(id) => open(id, contextIndex)}
+                          openBeside={openBeside}
+                        />
+                      )}
+                    </div>
+                    {compare && (
+                      <DiffView
+                        notes={panels
+                          .map((id) => notes.find((n) => n.id === id))
+                          .filter(Boolean)}
+                        onClose={() => setCompare(false)}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <div className="empty">
+                    <FileText size={40} />
+                    <h2>Your next idea starts here.</h2>
+                    <Button icon={Plus} onClick={create}>
+                      Create a note
+                    </Button>
+                  </div>
+                )
+              ) : view === "graph" ? (
+                <GraphView
+                  notes={visible}
+                  open={open}
+                  settings={workspace.settings}
+                  onSettingsChange={workspace.saveSettings}
+                />
+              ) : (
+                <NoteTable
+                  notes={visible}
+                  update={update}
+                  open={open}
+                  settings={workspace.settings}
+                  onSettingsChange={workspace.saveSettings}
+                />
+              )}
+              <footer>
+                <span>
+                  <span className="status-dot" />
+                  Thread local <span className="footer-divider">/</span>{" "}
+                  {notes.length} notes · {tags.length} tags
+                </span>
+                <span>
+                  <kbd>/</kbd> blocks <kbd>@</kbd> mentions <kbd>#</kbd> tags{" "}
+                  <span className="footer-divider">/</span> <kbd>⌘ Enter</kbd>{" "}
+                  focus
+                </span>
+              </footer>
+            </main>
           </div>
-        )}
-        {trash && (
-          <div className="toast">
-            Deleted “{trash.title}”{" "}
-            <button
-              onClick={async () => {
-                try {
-                  await workspace.flush();
-                  try {
-                    await api("/notes/" + trash.id + "/restore", {
-                      method: "POST",
-                      body: {},
-                    });
-                  } catch (e) {
-                    if (e.status !== 404) throw e;
-                    setNotes((p) => [
-                      ...p,
-                      { ...trash, revision: 0, deletedAt: null },
-                    ]);
-                  }
-                  await workspace.reload();
-                  setTrash(null);
-                } catch (e) {
-                  setError(e.message);
-                }
-              }}
-            >
-              Undo
-            </button>
-            <button aria-label="Dismiss undo" onClick={() => setTrash(null)}>
-              ×
-            </button>
-          </div>
-        )}
-        {settingsOpen && (
-          <WorkspaceSettings
-            workspace={workspace}
-            note={contextNote}
-            onRestore={(data) => {
-              if (!canLeaveBundle()) return;
-              const layout = data.settings?.layout || {};
-              setPanels(
-                layout.panels || data.notes.slice(0, 1).map((n) => n.id),
-              );
-              setTabs(layout.tabs || data.notes.slice(0, 1).map((n) => n.id));
-              setWidths(layout.widths || [1, 1, 1]);
-              setView(layout.view || "notes");
-              setNotebook("");
-            }}
-            onClose={() => setSettingsOpen(false)}
+          <input
+            type="file"
+            hidden
+            ref={fileRef}
+            accept=".json,.md"
+            onChange={importFile}
           />
-        )}
-        <ConflictReview workspace={workspace} />
-        {workspace.needsUnlock && <Reauthenticate workspace={workspace} />}
-        {workspace.error && (
-          <div className="toast" role="alert">
-            {workspace.error}
-            <button onClick={() => workspace.flush().catch(() => {})}>
-              Retry save
-            </button>
+          {toast && (
+            <div className="toast" role="status">
+              {toast}
+            </div>
+          )}
+          {trash && (
+            <div className="toast">
+              Deleted “{trash.title}”{" "}
+              <button
+                onClick={async () => {
+                  try {
+                    await workspace.flush();
+                    try {
+                      await api("/notes/" + trash.id + "/restore", {
+                        method: "POST",
+                        body: {},
+                      });
+                    } catch (e) {
+                      if (e.status !== 404) throw e;
+                      setNotes((p) => [
+                        ...p,
+                        { ...trash, revision: 0, deletedAt: null },
+                      ]);
+                    }
+                    await workspace.reload();
+                    setTrash(null);
+                  } catch (e) {
+                    setError(e.message);
+                  }
+                }}
+              >
+                Undo
+              </button>
+              <button aria-label="Dismiss undo" onClick={() => setTrash(null)}>
+                ×
+              </button>
+            </div>
+          )}
+          {settingsOpen && (
+            <WorkspaceSettings
+              workspace={workspace}
+              note={contextNote}
+              onRestore={(data) => {
+                if (!canLeaveBundle()) return;
+                const layout = data.settings?.layout || {};
+                setPanels(
+                  layout.panels || data.notes.slice(0, 1).map((n) => n.id),
+                );
+                setTabs(layout.tabs || data.notes.slice(0, 1).map((n) => n.id));
+                setWidths(layout.widths || [1, 1, 1]);
+                setView(layout.view || "notes");
+                setNotebook("");
+              }}
+              onClose={() => setSettingsOpen(false)}
+            />
+          )}
+          <ConflictReview workspace={workspace} />
+          {workspace.needsUnlock && <Reauthenticate workspace={workspace} />}
+          {workspace.error && (
+            <div className="toast" role="alert">
+              {workspace.error}
+              <button onClick={() => workspace.flush().catch(() => {})}>
+                Retry save
+              </button>
+            </div>
+          )}
+          <div className="print-only">
+            <h1 id="print-title" />
+            <div id="print-note" />
           </div>
-        )}
-        <div className="print-only">
-          <h1 id="print-title" />
-          <div id="print-note" />
-        </div>
-      </EditContext.Provider>
+        </EditContext.Provider>
+      </DiagramWorkspaceContext.Provider>
     </Suspense>
   );
 }
@@ -1187,13 +1251,24 @@ function NotePane({
     [exports, setExports] = useState(false),
     [blockMode, setBlockMode] = useState(false);
   const input = useRef();
-  const sourceDiagrams = useMemo(
+  const insertionCaret = useRef(null);
+  // Apply the caret with the controlled value commit, before a later user
+  // selection can be overwritten by deferred animation-frame work.
+  useLayoutEffect(() => {
+    const pending = insertionCaret.current;
+    if (!pending) return;
+    insertionCaret.current = null;
+    if (pending.noteId !== note.id || pending.body !== note.body) return;
+    input.current?.focus();
+    input.current?.setSelectionRange(pending.position, pending.position);
+  }, [note.id, note.body, completion]);
+  const sourceVisuals = useMemo(
     () =>
       editing
         ? parseBlocks(note.body).filter(
             (block) =>
               block.type === "code" &&
-              /^(`{3,}|~{3,})thread-diagram\b/.test(block.source),
+              /^(`{3,}|~{3,})thread-(?:diagram|mindmap)\b/.test(block.source),
           )
         : [],
     [editing, note.body],
@@ -1226,15 +1301,9 @@ function NotePane({
     end = input.current?.selectionEnd,
   ) => {
     const body = note.body.slice(0, start) + value + note.body.slice(end);
+    insertionCaret.current = { noteId: note.id, body, position: start + value.length };
     update(note.id, { body });
     setCompletion(null);
-    requestAnimationFrame(() => {
-      input.current?.focus();
-      input.current?.setSelectionRange(
-        start + value.length,
-        start + value.length,
-      );
-    });
   };
   const choose = (o) => insert(o.value, completion.start, completion.end);
   const format = (before, after = "") => {
@@ -1312,6 +1381,21 @@ function NotePane({
                   note.body +
                   "\n\n```thread-diagram\n" +
                   JSON.stringify(defaultDiagram()) +
+                  "\n```\n",
+              });
+              setEditing(false);
+              setBlockMode(true);
+            }}
+          />
+          <Button
+            icon={GitBranch}
+            title="Insert mind map"
+            onClick={() => {
+              update(note.id, {
+                body:
+                  note.body +
+                  "\n\n```thread-mindmap\n" +
+                  JSON.stringify(defaultMindMap()) +
                   "\n```\n",
               });
               setEditing(false);
@@ -1451,17 +1535,17 @@ function NotePane({
             </span>
           </div>
         )}
-        {editing && sourceDiagrams.length > 0 && (
+        {editing && sourceVisuals.length > 0 && (
           <section
             className="source-diagrams"
-            aria-label="Diagrams in this note"
+            aria-label="Visual blocks in this note"
           >
-            <h3>Diagrams</h3>
+            <h3>Diagrams and mind maps</h3>
             <p>
-              Edit diagrams visually here. Their Markdown data remains in the
-              source below.
+              Edit visual blocks here. Their Markdown data remains in the source
+              below.
             </p>
-            {sourceDiagrams.map((block, index) => (
+            {sourceVisuals.map((block, index) => (
               <Render
                 key={block.id || index}
                 note={{ ...note, body: block.source }}

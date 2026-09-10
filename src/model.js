@@ -1,8 +1,35 @@
-import { defaultDiagram } from "./diagram/model.js";
+import { defaultDiagram, parseDiagram } from "./diagram/model.js";
+import { defaultMindMap, parseMindMap } from "./mindmap/model.js";
+import { diagramFences } from "./diagram/note-diagrams.js";
 const metadataCache = new Map();
 export function metadata(body) {
   if (metadataCache.has(body)) return metadataCache.get(body);
   const prose = body.replace(/```[\s\S]*?```/g, "").replace(/`[^`]*`/g, "");
+  const diagramLinks = [];
+  if (body.includes("thread-diagram")) {
+    for (const fence of diagramFences(body)) {
+      try {
+        for (const node of parseDiagram(fence.value).nodes) {
+          const link = node.data.link;
+          if (["note", "block", "concept"].includes(link?.kind))
+            diagramLinks.push(link.noteId);
+        }
+      } catch {
+        /* Keep malformed source repairable without breaking note lists. */
+      }
+    }
+  }
+  if (body.includes("thread-mindmap")) {
+    for (const fence of diagramFences(body, "thread-mindmap")) {
+      try {
+        for (const node of parseMindMap(fence.value).nodes)
+          if (["note", "block", "concept"].includes(node.link?.kind))
+            diagramLinks.push(node.link.noteId);
+      } catch {
+        /* Invalid visual source remains repairable. */
+      }
+    }
+  }
   const result = {
     tags: [
       ...new Set(
@@ -11,6 +38,7 @@ export function metadata(body) {
     ],
     links: [
       ...new Set([
+        ...diagramLinks,
         ...[
           ...prose.matchAll(
             /@\[[^\]]*\]\((?:note:|block:)([^/\s)#]+)(?:[^)]*)\)/g,
@@ -65,6 +93,11 @@ export function validateBackup(data) {
   return data;
 }
 export const templates = [
+  [
+    "Mind map",
+    "```thread-mindmap\n" + JSON.stringify(defaultMindMap()) + "\n```\n",
+    "Visual",
+  ],
   [
     "Visual diagram",
     "```thread-diagram\n" + JSON.stringify(defaultDiagram()) + "\n```\n",

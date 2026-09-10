@@ -4,7 +4,11 @@ import remarkGfm from "remark-gfm";
 import hljs from "highlight.js/lib/common";
 import { parseBlocks } from "./editor-model";
 import { BlockReferenceLink, EmbeddedParagraph } from "./rich/BlockReferences";
+import { DiagramWorkspaceContext } from "./diagram/context.js";
+import { diagramFences, replaceDiagramFence } from "./diagram/note-diagrams.js";
+import { diagramRecoveryId } from "./diagram/recovery.js";
 const DiagramBlock = lazy(() => import("./diagram/DiagramBlock"));
+const MindMapBlock = lazy(() => import("./mindmap/MindMapBlock.jsx"));
 export const EditContext = createContext(null);
 const RenderContext = createContext(null);
 function propsFor(blocks, node) {
@@ -51,28 +55,79 @@ const components = {
     );
   },
   pre: function CodeBlock({ node, children }) {
-    const { note, notes, open, offset, edit, blocks } =
-        useContext(RenderContext),
+    const {
+        note,
+        notes,
+        open,
+        offset,
+        edit,
+        blocks,
+        diagramWorkspace,
+        resolveImage,
+      } = useContext(RenderContext),
       code = node.children?.[0];
-    if (code?.properties?.className?.includes("language-thread-diagram")) {
+    const language = code?.properties?.className?.includes(
+      "language-thread-mindmap",
+    )
+      ? "thread-mindmap"
+      : "thread-diagram";
+    if (code?.properties?.className?.includes(`language-${language}`)) {
       const value = code.children?.map((c) => c.value || "").join("") || "";
+      const full = notes.find((n) => n.id === note.id) || note;
+      const fences = diagramFences(full.body, language);
+      const fence = fences.find(
+        (item) => item.start === offset + node.position.start.offset,
+      );
+      const resolveAssetUrl = (url) => resolveImage?.(url) || url;
+      const isBundleDocument = !!(full.okf || full.bundleId);
+      const context = {
+        noteId: note.id,
+        diagramIndex: fence?.diagramIndex,
+        blockId: fence?.blockId,
+        revision: full.revision,
+        retainRecoveryOnSave: isBundleDocument,
+        notes: diagramWorkspace?.notes || notes,
+        bundles: diagramWorkspace?.bundles || [],
+        onOpenBundle: diagramWorkspace?.onOpenBundle,
+        onOpenNote:
+          diagramWorkspace?.onOpenNote ||
+          ((id, blockId) => open(id, undefined, blockId)),
+        onProposalApplied: diagramWorkspace?.onProposalApplied,
+        beforeProposalApply: diagramWorkspace?.beforeProposalApply,
+        resolveAssetUrl,
+        resolveAsset: async (url) => {
+          const target = resolveAssetUrl(url);
+          if (!/^\/api\/(?:assets\/|okf\/bundles\/)/.test(target))
+            throw new Error(`Cannot locate diagram image: ${url}`);
+          const response = await fetch(target);
+          if (!response.ok)
+            throw new Error(`Cannot load diagram image (${response.status}).`);
+          const blob = await response.blob();
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () =>
+              reject(new Error("Cannot read diagram image."));
+            reader.readAsDataURL(blob);
+          });
+        },
+      };
+      const VisualBlock =
+        language === "thread-mindmap" ? MindMapBlock : DiagramBlock;
       return (
         <div {...propsFor(blocks, node)}>
-          <DiagramBlock
+          <VisualBlock
             value={value}
+            context={context}
+            recoveryKey={
+              fence ? diagramRecoveryId(note.id, fence, fences) : undefined
+            }
             readOnly={!edit}
-            onChange={(json) => {
-              const full = notes.find((n) => n.id === note.id) || note,
-                start = offset + node.position.start.offset,
-                end = offset + node.position.end.offset;
+            onChange={async (json) => {
               edit(note.id, {
-                body:
-                  full.body.slice(0, start) +
-                  "```thread-diagram\n" +
-                  json +
-                  "\n```" +
-                  full.body.slice(end),
+                body: replaceDiagramFence(full.body, fence, json, language),
               });
+              if (!isBundleDocument) await diagramWorkspace?.flush?.();
             }}
           />
         </div>
@@ -172,12 +227,24 @@ export default function Render({
   resolveImage,
 }) {
   const edit = useContext(EditContext),
+    diagramWorkspace = useContext(DiagramWorkspaceContext),
     blocks = useMemo(
       () => new Map(parseBlocks(note.body).map((b) => [b.start, b])),
       [note.body],
     );
   return (
-    <RenderContext.Provider value={{ note, notes, open, offset, edit, blocks }}>
+    <RenderContext.Provider
+      value={{
+        note,
+        notes,
+        open,
+        offset,
+        edit,
+        blocks,
+        diagramWorkspace,
+        resolveImage,
+      }}
+    >
       <Markdown
         remarkPlugins={plugins}
         urlTransform={(url, key) =>

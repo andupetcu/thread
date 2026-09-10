@@ -83,7 +83,7 @@ export default function BlockEditor({
     const block = parseBlocks(base)[index];
     setMode(
       richFallbackReason(block.source) &&
-        !/^\s*(`{3,}|~{3,})thread-diagram/.test(block.source)
+        !/^\s*(`{3,}|~{3,})thread-(?:diagram|mindmap)/.test(block.source)
         ? "source"
         : "rich",
     );
@@ -374,7 +374,9 @@ export default function BlockEditor({
                   aria-pressed={mode === "rich"}
                   disabled={
                     !!richFallbackReason(active.draft) &&
-                    !/^\s*(`{3,}|~{3,})thread-diagram/.test(active.draft)
+                    !/^\s*(`{3,}|~{3,})thread-(?:diagram|mindmap)/.test(
+                      active.draft,
+                    )
                   }
                   onClick={() => {
                     setCompletion(null);
@@ -396,7 +398,9 @@ export default function BlockEditor({
                 </small>
               )}
               {mode === "rich" ? (
-                /^\s*(`{3,}|~{3,})thread-diagram/.test(active.draft) ? (
+                /^\s*(`{3,}|~{3,})thread-(?:diagram|mindmap)/.test(
+                  active.draft,
+                ) ? (
                   <Render
                     note={{ ...note, body: active.draft }}
                     notes={notes}

@@ -1,3 +1,4 @@
+import { handleDiagrams } from "./diagram-http.mjs";
 import http from "node:http";
 import { handleOkf } from "./okf-http.mjs";
 import { randomUUID } from "node:crypto";
@@ -89,6 +90,22 @@ export function createServer({ dir, staticDir = path.resolve("dist") } = {}) {
       const body = async () => JSON.parse((await readBody(req)).toString());
       if (route.startsWith("/agent/")) {
         const agentIdentity = accounts.agent(req);
+        if (
+          await handleDiagrams({
+            route: route.slice(6),
+            method,
+            url,
+            body: async () => {
+              const input = await body();
+              accounts.agent(req);
+              return input;
+            },
+            json,
+            store,
+            actor: { kind: "agent", id: agentIdentity?.id || "mcp" },
+          })
+        )
+          return;
         if (
           await handleOkf({
             route: route.slice(6),
@@ -253,6 +270,18 @@ export function createServer({ dir, staticDir = path.resolve("dist") } = {}) {
             id: user.id,
             name: user.username || user.name,
           },
+        })
+      )
+        return;
+      if (
+        await handleDiagrams({
+          route,
+          method,
+          url,
+          body: async () => JSON.parse((await readWorkspaceBody()).toString()),
+          json,
+          store,
+          actor: { kind: "human", id: user.id },
         })
       )
         return;

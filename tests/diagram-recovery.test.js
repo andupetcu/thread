@@ -1,0 +1,43 @@
+import { it, expect } from "vitest";
+import {
+  clearPersistedDiagramDrafts,
+  diagramRecoveryId,
+} from "../src/diagram/recovery.js";
+import { diagramFences } from "../src/diagram/note-diagrams.js";
+const empty = { version: 2, nodes: [], edges: [] };
+const fence = (d) => "```thread-diagram\n" + JSON.stringify(d) + "\n```";
+it("distinguishes multiple diagrams under an inherited block marker", () => {
+  const body =
+    "<!-- thread:block id=shared -->\n" + fence(empty) + "\n\n" + fence(empty);
+  const fences = diagramFences(body);
+  expect(
+    new Set(fences.map((f) => diagramRecoveryId("note", f, fences))).size,
+  ).toBe(2);
+});
+it("clears only matching persisted recovery and preserves a different tab draft and viewport", () => {
+  const body = fence(empty) + "\n\n" + fence(empty);
+  const different = {
+    ...empty,
+    nodes: [
+      {
+        id: "a",
+        position: { x: 0, y: 0 },
+        data: { shape: "process", label: "unsaved", color: "#ffffff" },
+      },
+    ],
+  };
+  const saved = "thread-diagram-draft:note:diagram-0",
+    pending = "thread-diagram-draft:note:diagram-1";
+  const values = new Map([
+    [saved, JSON.stringify({ diagram: empty })],
+    [saved + ":viewport", "{}"],
+    [pending, JSON.stringify({ diagram: different })],
+  ]);
+  clearPersistedDiagramDrafts("note", body, {
+    getItem: (k) => values.get(k),
+    removeItem: (k) => values.delete(k),
+  });
+  expect(values.has(saved)).toBe(false);
+  expect(values.has(saved + ":viewport")).toBe(true);
+  expect(values.has(pending)).toBe(true);
+});

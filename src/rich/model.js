@@ -3,8 +3,8 @@ import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 const parser = unified().use(remarkParse).use(remarkGfm);
 export function richFallbackReason(source) {
-  if (/^\s*(`{3,}|~{3,})thread-diagram\b/.test(source))
-    return "Diagram data stays in Markdown; use the diagram editor in the preview.";
+  if (/^\s*(`{3,}|~{3,})thread-(?:diagram|mindmap)\b/.test(source))
+    return "Visual block data stays in Markdown; use its visual editor in the preview.";
   if (/!\[\[[^\]]+\]\]/.test(source))
     return "Block embeds stay in Markdown and update in the preview.";
   if (/!?\[[^\]]*\]\[[^\]]*\]|\[\^[^\]]+\]/.test(source))

@@ -24,6 +24,8 @@ import {
   Save,
 } from "lucide-react";
 import Render, { EditContext } from "../Render";
+import { clearPersistedDiagramDrafts } from "../diagram/recovery.js";
+import { clearPersistedMindMapDrafts } from "../mindmap/recovery.js";
 import { api } from "../storage/api";
 import ConceptMetadata from "./ConceptMetadata";
 import BundleTransfer from "./BundleTransfer";
@@ -437,6 +439,7 @@ function HealthView({ bundle, onSelect }) {
 
 export default function BundleWorkspace({
   bundleId,
+  navigationTarget,
   workspaceRevision,
   notes,
   onError,
@@ -468,7 +471,9 @@ export default function BundleWorkspace({
   async function load() {
     const request = ++latestRequest.current;
     try {
-      const next = unwrap(await api(`/okf/bundles/${bundleId}`));
+      const next = unwrap(
+        await api(`/okf/bundles/${encodeURIComponent(bundleId)}`),
+      );
       if (request !== latestRequest.current) return;
       setBundle(next);
       setRemoteChanged(false);
@@ -489,6 +494,25 @@ export default function BundleWorkspace({
     load();
   }, [bundleId]);
   const entry = bundle?.entries.find((item) => item.path === path);
+  useEffect(() => {
+    if (!navigationTarget?.noteId) return;
+    const target = bundle?.entries.find(
+      (item) => item.noteId === navigationTarget.noteId,
+    );
+    if (!target) return;
+    setPath(target.path);
+    setMode("tree");
+    if (navigationTarget.blockId) {
+      const timer = setTimeout(() => {
+        const element = document.querySelector(
+          `.okf-document [data-block-id="${CSS.escape(navigationTarget.blockId)}"]`,
+        );
+        element?.scrollIntoView({ block: "center" });
+        element?.focus();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [bundle?.id, navigationTarget]);
   useEffect(() => {
     if (entry) setDraft({ ...entry, metadata: { ...(entry.metadata || {}) } });
     setEditing(false);
@@ -523,7 +547,7 @@ export default function BundleWorkspace({
   useEffect(() => {
     let cancelled = false;
     if (!bundleId) return;
-    api(`/okf/bundles/${bundleId}`)
+    api(`/okf/bundles/${encodeURIComponent(bundleId)}`)
       .then((result) => {
         if (cancelled) return;
         const next = unwrap(result),
@@ -640,6 +664,17 @@ export default function BundleWorkspace({
       );
       setBundle(next);
       setDraft({ ...next.entries.find((item) => item.path === entry.path) });
+      const persisted = next.entries.find((item) => item.path === entry.path);
+      clearPersistedDiagramDrafts(
+        persisted.noteId,
+        persisted.body,
+        localStorage,
+      );
+      clearPersistedMindMapDrafts(
+        persisted.noteId,
+        persisted.body,
+        localStorage,
+      );
       setConflict(null);
       setRemoteChanged(false);
       setEditing(false);

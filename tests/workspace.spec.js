@@ -47,7 +47,7 @@ test("mentions survive renaming, tags complete, three panels show diff", async (
   await expect(editor).toHaveValue(/#engineering/);
   await page.getByRole("button", { name: "3 panels" }).click();
   await expect(page.locator(".note-pane")).toHaveCount(3);
-  await page.getByLabel("Note in panel 3", {exact:true}).selectOption("api");
+  await page.getByLabel("Note in panel 3", { exact: true }).selectOption("api");
   await page
     .getByRole("textbox", { name: "Note title" })
     .nth(2)
@@ -136,7 +136,9 @@ test("backup, Markdown import, note search, graph inspection and responsive layo
   await page.goto("/");
   const failures = [];
   page.on("pageerror", (e) => failures.push(e.message));
-  await expect(page.getByRole("textbox", { name: "Note title" })).toHaveValue("Start here");
+  await expect(page.getByRole("textbox", { name: "Note title" })).toHaveValue(
+    "Start here",
+  );
   await page.screenshot({ path: testInfo.outputPath("workspace-dark.png") });
   await page.getByRole("button", { name: "Find in note", exact: true }).click();
   await page
@@ -197,7 +199,7 @@ test("backup, Markdown import, note search, graph inspection and responsive layo
       (n) => !n.deletedAt && !n.okf,
     ),
   ).toHaveLength(7);
-  await page.locator("input[type=file]").setInputFiles({
+  await page.locator('input[type="file"][accept=".json,.md"]').setInputFiles({
     name: "Imported.md",
     mimeType: "text/markdown",
     buffer: Buffer.from("# Imported\n\nAn offline document #imported"),
@@ -310,4 +312,29 @@ test("every developer, product and Markdown block inserts from the command palet
       .click();
     await expect(editor).toHaveValue(value);
   }
+});
+
+test("a pending insertion frame cannot overwrite the next source selection", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Edit Markdown" }).click();
+  const editor = page.getByRole("textbox", { name: "Markdown source" });
+  await editor.fill("/");
+  // Hold the frame boundary so the next user selection precedes any deferred caret work.
+  await page.evaluate(() => {
+    const original = window.requestAnimationFrame;
+    const callbacks = [];
+    window.requestAnimationFrame = (callback) => callbacks.push(callback);
+    window.releaseInsertionFrames = () => {
+      window.requestAnimationFrame = original;
+      callbacks.forEach((callback) => callback(performance.now()));
+    };
+  });
+  await page.getByRole("button", { name: "Numbered list Structure", exact: true }).click();
+  await expect(editor).toHaveValue("1. First step\n2. Second step\n");
+  await editor.selectText();
+  await page.evaluate(() => window.releaseInsertionFrames());
+  await page.keyboard.insertText("/");
+  await expect(editor).toHaveValue("/");
+  await page.getByRole("button", { name: "Quote Structure", exact: true }).click();
+  await expect(editor).toHaveValue("> A useful quotation.\n");
 });

@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
+import { registerDiagramTools } from "./diagram-mcp.mjs";
 import { registerOkfTools } from "./okf-mcp.mjs";
 const base = new URL(process.env.THREAD_API_URL || "http://127.0.0.1:4317");
 if (
@@ -152,6 +153,7 @@ serveStdio(
       ({ id, ...input }) => request("/notes/" + id, input, "PATCH"),
     );
     registerOkfTools(server, request);
+    registerDiagramTools(server, request);
     return server;
   },
   { onerror: () => console.error("Thread MCP transport error.") },

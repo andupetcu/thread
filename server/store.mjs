@@ -14,6 +14,7 @@ import {
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
+import { DiagramStore } from "./diagrams.mjs";
 import { OkfStore } from "./okf.mjs";
 const now = () => new Date().toISOString();
 const SAFE = /^[a-zA-Z0-9_-]{1,128}$/;
@@ -301,6 +302,7 @@ export class WorkspaceStore {
     if (!this.getMeta("revision")) this.setMeta("revision", 0);
     if (!this.getMeta("schemaVersion")) this.setMeta("schemaVersion", 1);
     this.okf = new OkfStore(this);
+    this.diagrams = new DiagramStore(this);
   }
   close() {
     this.db.close();
@@ -668,6 +670,7 @@ export class WorkspaceStore {
   backupBytes() {
     const snapshot = {
       okf: this.okf.snapshot(),
+      diagrams: this.diagrams.snapshot(),
       format: "thread-workspace",
       version: 1,
       created: now(),
@@ -748,6 +751,7 @@ export class WorkspaceStore {
       files,
     );
     this.okf.validateSnapshot(snapshot.okf, notes);
+    this.diagrams.validateSnapshot(snapshot.diagrams, notes);
     const revisionBase = this.getMeta("revision") || 0;
     for (const n of notes)
       if (!Number.isSafeInteger(revisionBase + n.revision + 1))
@@ -792,6 +796,7 @@ export class WorkspaceStore {
             );
         }
         this.okf.restoreSnapshot(snapshot.okf, revisionBase);
+        this.diagrams.restoreSnapshot(snapshot.diagrams, revisionBase);
         for (const n of this.listNotes()) this.index(n);
         for (const v of versions)
           this.db
